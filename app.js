@@ -12,8 +12,18 @@
    ============================================================ */
 
 const STORE_KEY = 'habits.v1';
+const APP_VERSION = '1.4.0';
 const WEEKS_TILE = 7;
 const WEEKS_WIDE = 26;
+
+/* Zoom : compact / normal / large. Une tuile plus large montre plus d'historique. */
+const ZOOM_LEVELS = 3;
+const ZOOM_WEEKS = {
+  grid: [5, 7, 13],
+  list: [34, 26, 17],
+};
+const ZOOM_DOTS = [7, 7, 14];
+const ZOOM_NAMES = ['Compact', 'Normal', 'Large'];
 
 const PALETTE = [
   '#FF6B6B', '#FF9F43', '#FFD166', '#A3E635', '#4ADE80', '#2DD4BF',
@@ -106,6 +116,11 @@ function normalize(s) {
     settings: Object.assign({ viewMode: 'grid', showDone: true }, s.settings || {}),
   };
   out.settings.reminder = Object.assign({ enabled: false, time: '20:00' }, out.settings.reminder || {});
+  out.settings.zoom = Object.assign({ grid: 1, check: 1, list: 1 }, out.settings.zoom || {});
+  for (const m of ['grid', 'check', 'list']) {
+    const z = out.settings.zoom[m];
+    out.settings.zoom[m] = (z === 0 || z === 1 || z === 2) ? z : 1;
+  }
   for (const h of out.habits) {
     if (h.categoryId === undefined) h.categoryId = null;
     if (typeof h.description !== 'string') h.description = '';
@@ -264,6 +279,9 @@ const els = {
   dataInfo: $('#data-info'),
   importText: $('#import-text'),
   importFile: $('#import-file'),
+  updateBar: $('#update-bar'),
+  updateStatus: $('#update-status'),
+  appVersion: $('#app-version'),
 };
 
 const SHEETS = { edit: 'sheetEdit', cat: 'sheetCat', detail: 'sheetDetail', settings: 'sheetSettings' };
@@ -357,6 +375,10 @@ function cellHtml(h, k, tKey, selKey, cls) {
   return '<i class="' + cls + mark + '" style="background:' + bg + '"></i>';
 }
 
+function zoomOf(mode) {
+  return state.settings.zoom[mode !== undefined ? mode : state.settings.viewMode];
+}
+
 function weeksGridHtml(h, weeks, cls, selKey) {
   const t = todayDate();
   const tKey = keyOf(t);
@@ -390,25 +412,27 @@ function habitSubline(h) {
   return 'Commencez aujourd\'hui !';
 }
 
-function tileHtml(h, selKey, monthLabel) {
+function tileHtml(h, selKey, sub, weeks) {
   return (
     '<article class="tile" data-card="' + h.id + '">' +
       '<div class="tile-top">' +
         checkBtnHtml(h, isChecked(h.id, selKey), 'tile-check') +
         '<div class="tile-info">' +
           '<h3>' + escapeHtml(h.name) + '</h3>' +
-          '<p>' + monthLabel + '</p>' +
+          '<p>' + sub + '</p>' +
         '</div>' +
       '</div>' +
-      '<div class="mini-grid">' + weeksGridHtml(h, WEEKS_TILE, 'c', selKey) + '</div>' +
+      '<div class="mini-grid" style="--weeks:' + weeks + '">' +
+        weeksGridHtml(h, weeks, 'c', selKey) +
+      '</div>' +
     '</article>'
   );
 }
 
-function checkRowHtml(h, selKey) {
+function checkRowHtml(h, selKey, nDots) {
   const anchor = parseKey(selKey);
   let dots = '';
-  for (let i = 6; i >= 0; i--) {
+  for (let i = nDots - 1; i >= 0; i--) {
     const k = keyOf(addDays(anchor, -i));
     dots += '<i style="background:' + (isChecked(h.id, k) ? h.color : hexAlpha(h.color, 0.15)) + '"></i>';
   }
@@ -424,7 +448,7 @@ function checkRowHtml(h, selKey) {
   );
 }
 
-function cardHtml(h, selKey) {
+function cardHtml(h, selKey, weeks) {
   return (
     '<article class="card" data-card="' + h.id + '">' +
       '<div class="card-top">' +
@@ -435,7 +459,9 @@ function cardHtml(h, selKey) {
         '</div>' +
         checkBtnHtml(h, isChecked(h.id, selKey), 'check') +
       '</div>' +
-      '<div class="grid26">' + weeksGridHtml(h, WEEKS_WIDE, 'c', selKey) + '</div>' +
+      '<div class="grid26" style="--weeks:' + weeks + '">' +
+        weeksGridHtml(h, weeks, 'c', selKey) +
+      '</div>' +
     '</article>'
   );
 }
@@ -487,13 +513,19 @@ function renderHome(animateId) {
       '</div>';
   } else {
     const mode = state.settings.viewMode;
+    const z = zoomOf(mode);
     if (mode === 'grid') {
-      const monthLabel = ui.selectedDay.toLocaleDateString('fr-FR', { month: 'long' });
-      content = '<div class="tile-grid" data-sortable>' + list.map(h => tileHtml(h, selKey, monthLabel)).join('') + '</div>';
+      const weeks = ZOOM_WEEKS.grid[z];
+      /* en grand, la tuile a la place d'afficher la série plutôt que le mois */
+      const sub = h => (z === 2 ? habitSubline(h) : ui.selectedDay.toLocaleDateString('fr-FR', { month: 'long' }));
+      content = '<div class="tile-grid z' + z + '" data-sortable>' +
+        list.map(h => tileHtml(h, selKey, sub(h), weeks)).join('') + '</div>';
     } else if (mode === 'check') {
-      content = '<div class="check-list" data-sortable>' + list.map(h => checkRowHtml(h, selKey)).join('') + '</div>';
+      content = '<div class="check-list z' + z + '" data-sortable>' +
+        list.map(h => checkRowHtml(h, selKey, ZOOM_DOTS[z])).join('') + '</div>';
     } else {
-      content = '<div data-sortable>' + list.map(h => cardHtml(h, selKey)).join('') + '</div>';
+      content = '<div class="card-list z' + z + '" data-sortable>' +
+        list.map(h => cardHtml(h, selKey, ZOOM_WEEKS.list[z])).join('') + '</div>';
     }
   }
 
@@ -509,8 +541,50 @@ function renderHome(animateId) {
 function syncPill() {
   els.pill.hidden = ui.tab !== 'home' || !state.habits.length;
   for (const b of els.pill.children) {
-    b.classList.toggle('active', b.dataset.view === state.settings.viewMode);
+    const active = b.dataset.view === state.settings.viewMode;
+    b.classList.toggle('active', active);
+    let lvl = b.querySelector('.lvl');
+    if (!lvl) {
+      lvl = document.createElement('span');
+      lvl.className = 'lvl';
+      lvl.innerHTML = '<i></i><i></i><i></i>';
+      b.appendChild(lvl);
+    }
+    const z = zoomOf(b.dataset.view);
+    [...lvl.children].forEach((dot, i) => dot.classList.toggle('on', i <= z));
+    b.setAttribute('aria-label', (active ? 'Taille : ' + ZOOM_NAMES[z] + ' — appuyez pour changer' : b.dataset.view));
   }
+}
+
+/* Bulle éphémère annonçant le niveau de zoom */
+let zoomToast, zoomToastTimer;
+
+function showZoomToast() {
+  if (!zoomToast) {
+    zoomToast = document.createElement('div');
+    zoomToast.id = 'zoom-toast';
+    document.body.appendChild(zoomToast);
+  }
+  zoomToast.textContent = ZOOM_NAMES[zoomOf()];
+  zoomToast.classList.add('show');
+  clearTimeout(zoomToastTimer);
+  zoomToastTimer = setTimeout(() => zoomToast.classList.remove('show'), 900);
+}
+
+function setZoom(level, opts) {
+  const mode = state.settings.viewMode;
+  const z = Math.max(0, Math.min(ZOOM_LEVELS - 1, level));
+  if (z === state.settings.zoom[mode]) return false;
+  state.settings.zoom[mode] = z;
+  save();
+  renderHome();
+  if (!opts || opts.toast !== false) showZoomToast();
+  return true;
+}
+
+function cycleZoom() {
+  const mode = state.settings.viewMode;
+  setZoom((state.settings.zoom[mode] + 1) % ZOOM_LEVELS);
 }
 
 /* ---------- Rendu : statistiques ---------- */
@@ -1169,6 +1243,13 @@ function syncSettings() {
   for (const id in state.checks) checks += Object.keys(state.checks[id]).length;
   els.dataInfo.textContent = state.habits.length + ' habitudes · ' + checks + ' coches enregistrées';
 
+  els.appVersion.textContent = 'Mes Habitudes ' + APP_VERSION;
+  if (!els.updateStatus.dataset.busy) {
+    els.updateStatus.textContent = navigator.serviceWorker && navigator.serviceWorker.controller
+      ? 'Installée · fonctionne hors-ligne'
+      : 'Ouverte depuis le navigateur';
+  }
+
   const supported = 'Notification' in window;
   const perm = supported ? Notification.permission : 'unsupported';
   if (!supported) els.notifStatus.textContent = 'Non pris en charge par ce navigateur';
@@ -1321,6 +1402,7 @@ function startDragWatch(card, x, y) {
 
 els.home.addEventListener('pointerdown', e => {
   if (e.target.closest('[data-check]') || !els.home.querySelector('[data-sortable]')) return;
+  if (touchPts.size >= 1) return;      /* deuxième doigt : c'est un pincement */
   const card = e.target.closest('[data-card]');
   if (!card) return;
   startDragWatch(card, e.clientX, e.clientY);
@@ -1346,6 +1428,93 @@ for (const evt of ['pointerup', 'pointercancel']) {
     const wasActive = drag.active;
     endDrag(true);
     if (wasActive) suppressClick = true;
+  });
+}
+
+/* ---------- Mises à jour de l'app ---------- */
+
+function showUpdateBar() {
+  els.updateBar.hidden = false;
+}
+
+function applyUpdate() {
+  const reg = window.__swReg;
+  /* le nouveau service worker prend la main, puis la page se recharge
+     (écouteur 'controllerchange' posé à l'enregistrement) */
+  if (reg && reg.waiting) reg.waiting.postMessage('skip-waiting');
+  else location.reload();
+}
+
+async function checkForUpdate() {
+  const reg = window.__swReg;
+  els.updateStatus.dataset.busy = '1';
+  els.updateStatus.textContent = 'Recherche…';
+  if (!reg) {
+    delete els.updateStatus.dataset.busy;
+    els.updateStatus.textContent = 'Rechargez la page pour mettre à jour';
+    return;
+  }
+  try {
+    await reg.update();
+    await new Promise(r => setTimeout(r, 600));
+    delete els.updateStatus.dataset.busy;
+    if (reg.waiting || !els.updateBar.hidden) {
+      els.updateStatus.textContent = 'Nouvelle version prête';
+      showUpdateBar();
+    } else {
+      els.updateStatus.textContent = 'À jour ✓';
+      setTimeout(syncSettings, 2500);
+    }
+  } catch (e) {
+    delete els.updateStatus.dataset.busy;
+    els.updateStatus.textContent = 'Vérification impossible (hors-ligne ?)';
+  }
+}
+
+window.addEventListener('app-update-ready', showUpdateBar);
+
+/* ---------- Pincement pour zoomer ---------- */
+
+const pinch = { active: false, startDist: 0, startZoom: 1 };
+const touchPts = new Map();
+
+function pinchDistance() {
+  const [a, b] = [...touchPts.values()];
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+els.home.addEventListener('pointerdown', e => {
+  if (e.pointerType !== 'touch') return;
+  touchPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (touchPts.size === 2) {
+    endDrag(false);            /* un pincement n'est pas un déplacement */
+    pinch.active = true;
+    pinch.startDist = pinchDistance();
+    pinch.startZoom = zoomOf();
+  }
+});
+
+els.home.addEventListener('pointermove', e => {
+  if (!touchPts.has(e.pointerId)) return;
+  touchPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (!pinch.active || touchPts.size !== 2) return;
+  e.preventDefault();
+  const ratio = pinchDistance() / (pinch.startDist || 1);
+  /* écarter les doigts agrandit : ~35 % d'écart par palier */
+  let level = pinch.startZoom;
+  if (ratio > 1.35) level = pinch.startZoom + 1;
+  else if (ratio < 0.74) level = pinch.startZoom - 1;
+  if (setZoom(level)) {
+    pinch.startDist = pinchDistance();
+    pinch.startZoom = zoomOf();
+    suppressClick = true;
+  }
+}, { passive: false });
+
+for (const evt of ['pointerup', 'pointercancel', 'pointerleave']) {
+  els.home.addEventListener(evt, e => {
+    touchPts.delete(e.pointerId);
+    if (touchPts.size < 2) pinch.active = false;
   });
 }
 
@@ -1442,9 +1611,13 @@ document.addEventListener('click', e => {
 
   const view = target.closest('[data-view]');
   if (view) {
-    state.settings.viewMode = view.dataset.view;
-    save();
-    renderHome();
+    if (view.dataset.view === state.settings.viewMode) {
+      cycleZoom();          /* déjà sur cette vue : on change la taille */
+    } else {
+      state.settings.viewMode = view.dataset.view;
+      save();
+      renderHome();
+    }
     return;
   }
 
@@ -1572,6 +1745,9 @@ els.reminderTime.addEventListener('change', () => {
   scheduleReminder();
   syncSettings();
 });
+
+$('#update-now').addEventListener('click', applyUpdate);
+$('#check-update').addEventListener('click', checkForUpdate);
 
 $('#export-file').addEventListener('click', exportToFile);
 $('#export-copy').addEventListener('click', exportToClipboard);

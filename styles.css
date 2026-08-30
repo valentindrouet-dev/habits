@@ -328,7 +328,7 @@ button {
 .mini-grid {
   display: grid;
   grid-auto-flow: column;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(var(--weeks, 7), 1fr);
   grid-template-rows: repeat(7, auto);
   gap: 3px;
 }
@@ -336,7 +336,7 @@ button {
 .grid26 {
   display: grid;
   grid-auto-flow: column;
-  grid-template-columns: repeat(26, 1fr);
+  grid-template-columns: repeat(var(--weeks, 26), 1fr);
   grid-template-rows: repeat(7, auto);
   gap: 3px;
   margin-top: 12px;
@@ -1295,3 +1295,163 @@ input[type="time"]:focus { border-color: var(--accent); }
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ============================================================
+   Niveaux de zoom (compact / normal / large) par mode d'affichage
+   ============================================================ */
+
+/* --- Vue grille : le nombre de colonnes porte le zoom --- */
+
+.tile-grid.z0 { grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 8px; }
+.tile-grid.z1 { grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 10px; }
+.tile-grid.z2 { grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 12px; }
+
+.tile-grid.z0 .tile { padding: 8px; border-radius: 15px; }
+.tile-grid.z2 .tile { padding: 14px; border-radius: 22px; }
+
+.tile-grid.z0 .tile-top { gap: 5px; margin-bottom: 7px; }
+.tile-grid.z2 .tile-top { gap: 10px; margin-bottom: 12px; }
+
+.tile-grid.z0 .tile-check { width: 27px; height: 27px; border-radius: 9px; font-size: 13px; }
+.tile-grid.z0 .tile-check svg { width: 13px; height: 13px; }
+.tile-grid.z2 .tile-check { width: 44px; height: 44px; border-radius: 14px; font-size: 22px; }
+.tile-grid.z2 .tile-check svg { width: 21px; height: 21px; }
+
+.tile-grid.z0 .tile-info h3 { font-size: 11px; }
+.tile-grid.z0 .tile-info p { display: none; }
+.tile-grid.z2 .tile-info h3 { font-size: 15px; }
+.tile-grid.z2 .tile-info p { font-size: 12px; }
+
+.tile-grid.z0 .mini-grid { gap: 2.5px; }
+.tile-grid.z0 .mini-grid .c { border-radius: 3px; }
+.tile-grid.z2 .mini-grid { gap: 2.5px; }
+.tile-grid.z2 .mini-grid .c { border-radius: 2px; }
+
+/* --- Vue liste de contrôle --- */
+
+.check-list.z0 .crow { padding: 6px 10px; margin-top: 6px; border-radius: 13px; }
+.check-list.z0 .crow .tile-check { width: 32px; height: 32px; border-radius: 10px; font-size: 16px; }
+.check-list.z0 .crow .tile-check svg { width: 15px; height: 15px; }
+.check-list.z0 .crow-info h3 { font-size: 14px; }
+.check-list.z0 .crow-info p { display: none; }
+.check-list.z0 .week-dots i { width: 6px; height: 6px; border-radius: 2px; }
+
+.check-list.z2 .crow { padding: 14px; margin-top: 10px; border-radius: 20px; }
+.check-list.z2 .crow .tile-check { width: 52px; height: 52px; border-radius: 16px; font-size: 26px; }
+.check-list.z2 .crow .tile-check svg { width: 24px; height: 24px; }
+.check-list.z2 .crow-info h3 { font-size: 17px; }
+.check-list.z2 .crow-info p { font-size: 13px; }
+.check-list.z2 .week-dots i { width: 10px; height: 10px; border-radius: 3px; }
+
+/* --- Vue détaillée (grandes cartes) --- */
+
+.card-list.z0 .card { padding: 10px; margin-top: 9px; border-radius: 17px; }
+.card-list.z0 .chip { width: 36px; height: 36px; border-radius: 11px; font-size: 18px; }
+.card-list.z0 .check { width: 36px; height: 36px; border-radius: 11px; font-size: 17px; }
+.card-list.z0 .check svg { width: 17px; height: 17px; }
+.card-list.z0 .card-info h3 { font-size: 14px; }
+.card-list.z0 .card-info p { font-size: 12px; }
+.card-list.z0 .grid26 { gap: 2px; margin-top: 9px; }
+.card-list.z0 .grid26 .c { border-radius: 2px; }
+
+.card-list.z2 .card { padding: 16px; margin-top: 14px; }
+.card-list.z2 .chip { width: 54px; height: 54px; border-radius: 17px; font-size: 28px; }
+.card-list.z2 .check { width: 54px; height: 54px; border-radius: 17px; font-size: 26px; }
+.card-list.z2 .check svg { width: 25px; height: 25px; }
+.card-list.z2 .card-info h3 { font-size: 18px; }
+.card-list.z2 .grid26 { gap: 4px; margin-top: 14px; }
+.card-list.z2 .grid26 .c { border-radius: 4px; }
+
+/* vue détaillée compacte : 34 semaines, donc cellules fines */
+.card-list.z0 .grid26 .c { border-radius: 2px; }
+
+/* --- Indicateur de zoom dans la pilule --- */
+
+#view-pill button { position: relative; }
+
+#view-pill button .lvl {
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 2px;
+}
+
+#view-pill button .lvl i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.28;
+}
+
+#view-pill button .lvl i.on { opacity: 1; }
+
+#view-pill button:not(.active) .lvl { display: none; }
+#view-pill button.active svg { transform: translateY(-3px); }
+
+/* Bulle éphémère indiquant le niveau pendant un pincement */
+
+#zoom-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(140px + env(safe-area-inset-bottom));
+  transform: translateX(-50%) scale(0.9);
+  z-index: 25;
+  padding: 8px 16px;
+  border-radius: 14px;
+  background: rgba(28, 28, 36, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s, transform 0.18s;
+}
+
+#zoom-toast.show { opacity: 1; transform: translateX(-50%) scale(1); }
+
+/* ---------- Bandeau de mise à jour ---------- */
+
+#update-bar[hidden] { display: none; }
+
+#update-bar {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(96px + env(safe-area-inset-bottom));
+  z-index: 28;
+  width: calc(100% - 28px);
+  max-width: 492px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 12px 12px 16px;
+  border-radius: 16px;
+  background: rgba(28, 28, 36, 0.96);
+  border: 1px solid rgba(139, 92, 246, 0.45);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
+  animation: fadeIn 0.25s ease;
+}
+
+#update-bar span {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+#update-now {
+  flex: none;
+  padding: 9px 14px;
+  border-radius: 11px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.btn-ghost.compact { flex: none; padding: 11px 16px; font-size: 13px; }

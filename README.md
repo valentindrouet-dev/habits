@@ -13,6 +13,8 @@ stockées sur votre appareil (aucun serveur, aucun compte).
 - 🎨 Autant d'habitudes que vous voulez, chacune avec son **emoji**, sa **couleur** et une description
 - 🏷️ **Catégories** (avec emoji) pour filtrer les habitudes, + bouton « Fait » pour masquer ce qui est déjà coché
 - 🔲 **3 modes d'affichage** (sélecteur flottant en bas) : grille de tuiles, liste de contrôle, grandes cartes
+- 🔍 **3 tailles par mode** (compact / normal / large) : appuyez sur l'icône de la vue active,
+  ou pincez l'écran. Chaque vue garde sa propre taille
 - 🟩 Grilles de progression teintées à la couleur de l'habitude (façon GitHub)
 - 🔥 Séries en cours et records (jours d'affilée)
 - 📊 Statistiques **par mois** : réalisations, taux de réussite, calendrier de chaleur, détail par habitude
@@ -44,6 +46,36 @@ Hébergez le dossier sur n'importe quel hébergement statique en HTTPS
 - **Android (Chrome)** : ouvrir l'URL → menu ⋮ → « Installer l'application »
 
 L'app s'ouvre alors en plein écran, avec son icône, et fonctionne hors-ligne.
+
+## Mises à jour
+
+L'app est servie par un *service worker* en « réseau d'abord » pour son code
+(HTML/CSS/JS) : **au lancement suivant un déploiement, la nouvelle version est
+chargée automatiquement**. Le cache ne sert que de secours hors-ligne.
+
+Si une nouvelle version arrive pendant que l'app est ouverte, un bandeau
+« Nouvelle version disponible » apparaît. Réglages → **Version** affiche la version
+installée et permet de forcer une vérification.
+
+> Une version déjà installée avant ce changement pouvait rester bloquée sur
+> l'ancien code (l'ancien service worker servait tout depuis le cache).
+> Un rechargement forcé, ou une désinstallation/réinstallation, règle le cas une
+> dernière fois ; ensuite les mises à jour se font toutes seules.
+
+## Déploiement
+
+`.github/workflows/pages.yml` publie le dépôt sur **GitHub Pages** à chaque push
+sur la branche par défaut. L'URL est stable :
+
+```
+https://valentindrouet-dev.github.io/habits/
+```
+
+C'est cette URL qu'il faut ajouter à l'écran d'accueil : elle reçoit toutes les
+mises à jour, contrairement à un lien de prévisualisation.
+
+Si le premier déploiement échoue, vérifiez dans *Settings → Pages* que la source
+est bien « GitHub Actions » (le workflow tente de l'activer automatiquement).
 
 ## Rappel quotidien : ce qu'il faut savoir
 
@@ -94,7 +126,8 @@ Stockées dans le `localStorage` du navigateur, clé `habits.v1` :
   "settings": {
     "viewMode": "grid",
     "showDone": true,
-    "reminder": { "enabled": false, "time": "20:00" }
+    "reminder": { "enabled": false, "time": "20:00" },
+    "zoom": { "grid": 1, "check": 1, "list": 1 }
   }
 }
 ```

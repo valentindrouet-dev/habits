@@ -67,6 +67,11 @@
   </nav>
 </div>
 
+<div id="update-bar" hidden>
+  <span>Nouvelle version disponible</span>
+  <button id="update-now">Mettre à jour</button>
+</div>
+
 <div id="backdrop" class="backdrop"></div>
 
 <section id="sheet-edit" class="sheet" aria-hidden="true">
@@ -150,15 +155,58 @@
   </div>
   <input id="import-file" type="file" accept=".json,application/json" hidden>
   <p class="hint">L'import remplace toutes les données actuelles.</p>
+
+  <p class="label">Version</p>
+  <div class="set-row">
+    <div class="set-text">
+      <h4 id="app-version">Mes Habitudes</h4>
+      <p id="update-status" class="hint"></p>
+    </div>
+    <button id="check-update" class="btn-ghost compact">Vérifier</button>
+  </div>
 </section>
 
 <script src="app.js"></script>
 <script>
-if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+/* Enregistrement du service worker + détection des mises à jour.
+   updateViaCache:'none' empêche le navigateur de servir un sw.js périmé. */
+(function () {
+  if (!('serviceWorker' in navigator)) return;
+  var local = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  if (location.protocol !== 'https:' && !local) return;
+
   addEventListener('load', function () {
-    navigator.serviceWorker.register('sw.js').catch(function () {});
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+      .then(function (reg) {
+        window.__swReg = reg;
+
+        reg.addEventListener('updatefound', function () {
+          var sw = reg.installing;
+          if (!sw) return;
+          sw.addEventListener('statechange', function () {
+            /* une version est prête ET une ancienne tourne encore */
+            if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+              window.dispatchEvent(new CustomEvent('app-update-ready'));
+            }
+          });
+        });
+
+        /* on cherche une mise à jour au lancement et à chaque retour au premier plan */
+        reg.update().catch(function () {});
+        document.addEventListener('visibilitychange', function () {
+          if (!document.hidden) reg.update().catch(function () {});
+        });
+      })
+      .catch(function () {});
+
+    var reloading = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (reloading) return;
+      reloading = true;
+      location.reload();
+    });
   });
-}
+})();
 </script>
 </body>
 </html>
