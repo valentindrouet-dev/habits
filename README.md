@@ -56,7 +56,7 @@ L'app est servie par un *service worker* en « réseau d'abord » pour son code
 (HTML/CSS/JS) : **au lancement suivant un déploiement, la nouvelle version est
 chargée automatiquement**. Le cache ne sert que de secours hors-ligne.
 
-La version installée s'affiche en petit **à droite du titre** (`v0.05`), et dans
+La version installée s'affiche en petit **à droite du titre** (`v0.06`), et dans
 Réglages → **Version**, avec un bouton pour forcer une vérification. Si une nouvelle
 version arrive pendant que l'app est ouverte, un bandeau « Nouvelle version
 disponible » apparaît.
@@ -96,16 +96,50 @@ Le rappel utilise les notifications web, qui n'ont pas les mêmes garanties qu'u
 Pour un rappel garanti à la seconde près comme une app native, il faudrait une version
 native (Capacitor) ou des notifications push avec un petit serveur — faisable en évolution.
 
-## Sauvegarde
+## Sécurité des données
 
-Réglages → **Sauvegarde** :
+Les données vivent **sur l'appareil**. Trois protections sont en place, plus une
+qui ne dépend que de vous.
 
-- *Télécharger (.json)* enregistre un fichier `habitudes-AAAAMMJJ.json` ;
-- *Copier* place la sauvegarde dans le presse-papier (pratique pour l'envoyer par message) ;
-- *Restaurer* accepte un fichier ou un collage, avec une confirmation avant de remplacer les données.
+### Comment des données pourraient disparaître
 
-À faire de temps en temps : les données vivent dans le navigateur, et effacer les données
-de site les supprimerait.
+| Cause | Risque | Protégé ? |
+|---|---|---|
+| « Effacer les données de site » / historique | élevé | ❌ seul l'export protège |
+| Suppression de l'icône (PWA iOS) | élevé | ❌ seul l'export protège |
+| Perte, vol, changement de téléphone | élevé | ❌ seul l'export protège |
+| Purge automatique du navigateur (espace disque, inactivité) | moyen | ✅ stockage persistant + copie de secours |
+| localStorage vidé ou corrompu | moyen | ✅ récupération automatique depuis IndexedDB |
+| Mauvaise manipulation (suppression, import raté) | moyen | ✅ copies locales quotidiennes (30 jours) |
+| Bug d'écriture silencieux (quota plein…) | faible | ✅ bandeau d'alerte visible |
+
+### Ce que fait l'app
+
+1. **Stockage persistant** — au démarrage, l'app appelle `navigator.storage.persist()`
+   pour demander au navigateur de ne pas évincer ses données quand l'espace se réduit.
+   Accordé automatiquement sur Android quand l'app est installée ; refusé dans certains
+   contextes (le panneau Réglages indique l'état réel).
+2. **Copie de secours** — chaque enregistrement est dupliqué dans **IndexedDB**, un
+   stockage distinct de localStorage. Si localStorage est vidé, l'app **restaure seule**
+   au lancement suivant.
+3. **Copies locales quotidiennes** — un instantané par jour, 30 conservés, restaurables
+   depuis Réglages → *Copies locales*. C'est le filet contre une suppression accidentelle.
+4. **Écritures surveillées** — une écriture qui échoue (quota plein, mode privé) affiche
+   un bandeau rouge au lieu d'échouer en silence. Des données illisibles sont **mises de
+   côté** (`habits.v1.corrompu.<date>`) au lieu d'être écrasées.
+
+### Ce que l'app ne peut pas faire
+
+Les points 1 à 4 vivent tous **sur le téléphone**. Ils ne protègent ni d'un
+« effacer les données du site », ni d'une perte de l'appareil.
+
+**La seule protection réelle est une copie hors de l'appareil** : Réglages →
+*Sauvegarde hors de l'appareil* → *Télécharger (.json)* ou *Copier*.
+L'app suit la date de la dernière sauvegarde et affiche une pastille orange sur
+l'engrenage passé 14 jours. Un rythme mensuel suffit largement.
+
+La restauration (fichier ou collage) demande une confirmation en deux temps,
+car elle remplace tout.
 
 ## Structure
 
@@ -115,6 +149,7 @@ de site les supprimerait.
 | `styles.css` | Tout le design (thème sombre) |
 | `app.js` | Logique : habitudes, coches, séries, statistiques, rendu |
 | `sw.js` | Service worker (cache hors-ligne) |
+| — | Copies de secours : IndexedDB `habits-backup`, magasin `copies` |
 | `manifest.webmanifest` | Manifeste PWA (icône, nom, couleurs) |
 | `icons/` | Icônes de l'app |
 
@@ -132,7 +167,8 @@ Stockées dans le `localStorage` du navigateur, clé `habits.v1` :
     "viewMode": "grid",
     "showDone": true,
     "reminder": { "enabled": false, "time": "20:00" },
-    "zoom": { "grid": 1, "check": 1, "list": 1 }
+    "zoom": { "grid": 1, "check": 1, "list": 1 },
+    "lastBackupAt": "2026-08-30T16:00:00.000Z"
   }
 }
 ```
@@ -143,6 +179,7 @@ L'ordre du tableau `habits` est celui de l'affichage (modifié par glisser-dépo
 
 - Objectifs « X fois par semaine » plutôt que quotidiens
 - Archiver une habitude sans perdre son historique
-- Sauvegarde automatique vers un cloud (Drive, iCloud…)
+- Sauvegarde automatique vers un cloud (Drive, iCloud…) — la seule vraie protection
+  contre la perte du téléphone qui ne demande aucun geste
 - Rappels par habitude, et non un seul rappel global
 - Version native (Capacitor / React Native) pour des notifications garanties et les stores

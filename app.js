@@ -12,7 +12,7 @@
    ============================================================ */
 
 const STORE_KEY = 'habits.v1';
-const APP_VERSION = '0.05';
+const APP_VERSION = '0.06';
 const WEEKS_TILE = 7;
 const WEEKS_WIDE = 26;
 
@@ -118,6 +118,7 @@ function normalize(s) {
   };
   out.settings.reminder = Object.assign({ enabled: false, time: '20:00' }, out.settings.reminder || {});
   out.settings.zoom = Object.assign({ grid: 1, check: 1, list: 1 }, out.settings.zoom || {});
+  if (typeof out.settings.lastBackupAt !== 'string') out.settings.lastBackupAt = '';
   for (const m of ['grid', 'check', 'list']) {
     const z = out.settings.zoom[m];
     out.settings.zoom[m] = (z === 0 || z === 1 || z === 2) ? z : 1;
@@ -130,25 +131,212 @@ function normalize(s) {
   return out;
 }
 
+/* Signale à l'interface qu'une écriture a échoué (quota plein, mode privé…).
+   Une écriture ratée en silence, c'est de la donnée perdue sans le savoir. */
+const health = { writeFailed: false, lastError: '', recovered: false, mirrorReady: false };
+
 function load() {
+  let raw = null;
   try {
-    const raw = localStorage.getItem(STORE_KEY);
-    if (raw) {
-      const s = JSON.parse(raw);
-      if (s && typeof s === 'object') return normalize(s);
-    }
-  } catch (e) { /* stockage indisponible ou corrompu : on repart de zéro */ }
-  return normalize({});
+    raw = localStorage.getItem(STORE_KEY);
+  } catch (e) {
+    health.writeFailed = true;
+    health.lastError = 'Stockage inaccessible';
+    return normalize({});
+  }
+  if (!raw) return normalize({});
+
+  try {
+    const s = JSON.parse(raw);
+    if (s && typeof s === 'object') return normalize(s);
+    throw new Error('forme inattendue');
+  } catch (e) {
+    /* Données illisibles : on les met de côté AVANT toute écriture, sinon le
+       premier save() les écraserait définitivement. La copie de secours
+       (IndexedDB) prendra le relais au démarrage. */
+    try {
+      localStorage.setItem(STORE_KEY + '.corrompu.' + Date.now(), raw);
+      localStorage.removeItem(STORE_KEY);
+    } catch (e2) { /* rien de mieux à faire */ }
+    health.lastError = 'Données illisibles, mises de côté';
+    return normalize({});
+  }
 }
 
 function save() {
+  let json;
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(state));
-  } catch (e) { /* stockage indisponible (navigation privée…) */ }
+    json = JSON.stringify(state);
+  } catch (e) {
+    health.writeFailed = true;
+    health.lastError = 'Données non sérialisables';
+    return;
+  }
+  try {
+    localStorage.setItem(STORE_KEY, json);
+    if (health.writeFailed) {
+      health.writeFailed = false;
+      health.lastError = '';
+      syncWriteWarning();
+    }
+  } catch (e) {
+    health.writeFailed = true;
+    health.lastError = (e && e.name === 'QuotaExceededError')
+      ? 'Stockage plein'
+      : 'Écriture refusée par le navigateur';
+    syncWriteWarning();
+  }
+  mirrorSoon(json);
 }
 
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+/* ============================================================
+   Copie de secours (IndexedDB)
+   localStorage et IndexedDB sont deux stockages distincts : une copie
+   dans le second permet de repartir si le premier est vidé ou corrompu.
+   S'y ajoutent des instantanés quotidiens, qui protègent d'une mauvaise
+   manipulation (suppression d'une habitude, import malheureux).
+   ⚠ Les deux vivent sur l'appareil : seul l'export protège d'un
+   « effacer les données du site », d'une perte ou d'un changement de
+   téléphone.
+   ============================================================ */
+
+const IDB_NAME = 'habits-backup';
+const IDB_STORE = 'copies';
+const SNAPSHOT_KEEP = 30;
+
+let idbPromise = null;
+
+function openIdb() {
+  if (idbPromise) return idbPromise;
+  idbPromise = new Promise(resolve => {
+    if (!('indexedDB' in window)) return resolve(null);
+    let req;
+    try { req = indexedDB.open(IDB_NAME, 1); } catch (e) { return resolve(null); }
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE, { keyPath: 'id' });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => resolve(null);
+    req.onblocked = () => resolve(null);
+  });
+  return idbPromise;
+}
+
+function idbRun(mode, fn) {
+  return openIdb().then(db => {
+    if (!db) return null;
+    return new Promise(resolve => {
+      let tx;
+      try { tx = db.transaction(IDB_STORE, mode); } catch (e) { return resolve(null); }
+      const store = tx.objectStore(IDB_STORE);
+      let out = null;
+      try { out = fn(store); } catch (e) { return resolve(null); }
+      /* out est une IDBRequest : on renvoie son résultat, jamais la requête
+         elle-même (un objet toujours truthy fausserait les tests d'absence). */
+      tx.oncomplete = () => resolve(out && typeof out === 'object' && 'result' in out ? out.result : null);
+      tx.onerror = () => resolve(null);
+      tx.onabort = () => resolve(null);
+    });
+  }).catch(() => null);
+}
+
+function idbPut(record) {
+  return idbRun('readwrite', store => store.put(record));
+}
+
+function idbGet(id) {
+  return idbRun('readonly', store => store.get(id));
+}
+
+function idbAll() {
+  return idbRun('readonly', store => store.getAll());
+}
+
+/* Écriture de la copie miroir, groupée pour ne pas écrire à chaque coche. */
+let mirrorTimer = null;
+let mirrorPending = null;
+
+function mirrorSoon(json) {
+  mirrorPending = json;
+  clearTimeout(mirrorTimer);
+  mirrorTimer = setTimeout(writeMirror, 800);
+}
+
+async function writeMirror() {
+  const json = mirrorPending;
+  if (!json) return;
+  mirrorPending = null;
+  const now = new Date();
+  const ok = await idbPut({ id: 'live', json, savedAt: now.toISOString() });
+  health.mirrorReady = ok !== null;
+
+  /* un instantané par jour, pour pouvoir remonter le temps */
+  const dayId = 'snap-' + keyOf(todayDate());
+  const existing = await idbGet(dayId);
+  if (!existing) {
+    await idbPut({ id: dayId, json, savedAt: now.toISOString() });
+    await pruneSnapshots();
+  }
+}
+
+async function pruneSnapshots() {
+  const all = await idbAll();
+  if (!all) return;
+  const snaps = all.filter(r => r.id.startsWith('snap-')).sort((a, b) => a.id.localeCompare(b.id));
+  const excess = snaps.length - SNAPSHOT_KEEP;
+  for (let i = 0; i < excess; i++) {
+    await idbRun('readwrite', store => store.delete(snaps[i].id));
+  }
+}
+
+function snapshotList() {
+  return idbAll().then(all => {
+    if (!all) return [];
+    return all.filter(r => r.id.startsWith('snap-'))
+      .sort((a, b) => b.id.localeCompare(a.id));
+  });
+}
+
+/* Au démarrage : si localStorage est vide alors que la copie contient des
+   habitudes, c'est que le navigateur a fait le ménage. On restaure. */
+async function recoverIfEmpty() {
+  if (state.habits.length) return false;
+  const rec = await idbGet('live');
+  if (!rec || !rec.json) return false;
+  let parsed;
+  try { parsed = JSON.parse(rec.json); } catch (e) { return false; }
+  const next = normalize(parsed);
+  if (!next.habits.length) return false;
+
+  state.habits = next.habits;
+  state.checks = next.checks;
+  state.categories = next.categories;
+  state.settings = next.settings;
+  save();
+  health.recovered = true;
+  renderAll();
+  return true;
+}
+
+/* Stockage « persistant » : demande au navigateur de ne pas évincer
+   ces données quand l'espace disque se réduit. */
+async function storagePersisted() {
+  try {
+    if (navigator.storage && navigator.storage.persisted) return await navigator.storage.persisted();
+  } catch (e) { /* non pris en charge */ }
+  return false;
+}
+
+async function requestPersistence() {
+  try {
+    if (navigator.storage && navigator.storage.persist) return await navigator.storage.persist();
+  } catch (e) { /* non pris en charge */ }
+  return false;
 }
 
 const state = load();
@@ -282,6 +470,12 @@ const els = {
   importFile: $('#import-file'),
   updateBar: $('#update-bar'),
   versionBadge: $('#version-badge'),
+  settingsBtn: $('#settings-btn'),
+  writeWarning: $('#write-warning'),
+  writeWarningText: $('#write-warning-text'),
+  safetyRows: $('#safety-rows'),
+  persistBtn: $('#persist-btn'),
+  snapshotList: $('#snapshot-list'),
   updateStatus: $('#update-status'),
   appVersion: $('#app-version'),
 };
@@ -1178,6 +1372,7 @@ async function exportToFile() {
   if (host) {
     try {
       await host.save({ filename: name, data: text });
+      markBackedUp();
       flash(els.dataInfo, '✓ Sauvegarde enregistrée');
     } catch (e) {
       const declined = e && e.code === 'declined';
@@ -1195,6 +1390,7 @@ async function exportToFile() {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+  markBackedUp();
   flash(els.dataInfo, '✓ Sauvegarde téléchargée');
 }
 
@@ -1202,6 +1398,7 @@ async function exportToClipboard() {
   const text = exportPayload();
   try {
     await navigator.clipboard.writeText(text);
+    markBackedUp();
     flash(els.dataInfo, '✓ Sauvegarde copiée');
   } catch (e) {
     /* presse-papier refusé : on affiche le texte pour un copier manuel */
@@ -1263,6 +1460,109 @@ function syncSettings() {
   else if (perm === 'denied') els.notifStatus.textContent = 'Notifications bloquées dans les réglages du navigateur';
   else if (r.enabled) els.notifStatus.textContent = 'Actif tous les jours à ' + r.time;
   else els.notifStatus.textContent = 'Désactivé';
+}
+
+/* ---------- Sécurité des données : affichage et actions ---------- */
+
+function daysSince(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d)) return null;
+  return Math.floor((todayDate() - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
+}
+
+function backupAgeLabel() {
+  const n = daysSince(state.settings.lastBackupAt);
+  if (n === null) return { text: 'jamais', level: 'bad' };
+  if (n === 0) return { text: "aujourd'hui", level: 'good' };
+  if (n === 1) return { text: 'hier', level: 'good' };
+  if (n <= 14) return { text: 'il y a ' + n + ' j', level: 'good' };
+  if (n <= 30) return { text: 'il y a ' + n + ' j', level: 'warn' };
+  return { text: 'il y a ' + n + ' j', level: 'bad' };
+}
+
+function markBackedUp() {
+  state.settings.lastBackupAt = new Date().toISOString();
+  save();
+  renderSafety();
+}
+
+function syncWriteWarning() {
+  els.writeWarning.hidden = !health.writeFailed;
+  if (health.writeFailed) {
+    els.writeWarningText.textContent =
+      '⚠ ' + (health.lastError || 'Écriture impossible') +
+      ' — vos dernières coches ne sont peut-être pas enregistrées. Exportez une sauvegarde.';
+  }
+  syncAttentionDot();
+}
+
+function syncAttentionDot() {
+  const age = daysSince(state.settings.lastBackupAt);
+  const stale = age === null || age > 14;
+  els.settingsBtn.classList.toggle('needs-attention', health.writeFailed || stale);
+}
+
+function safetyRow(label, value, level, dot) {
+  return (
+    '<div class="safety">' +
+      '<span class="dot ' + (dot || level) + '"></span>' +
+      '<span class="lbl">' + label + '</span>' +
+      '<span class="val ' + level + '">' + value + '</span>' +
+    '</div>'
+  );
+}
+
+async function renderSafety() {
+  const persisted = await storagePersisted();
+  const age = backupAgeLabel();
+  const snaps = await snapshotList();
+
+  els.safetyRows.innerHTML =
+    safetyRow('Stockage protégé', persisted ? 'oui' : 'non', persisted ? 'good' : 'warn') +
+    safetyRow('Copie de secours', health.mirrorReady ? 'active' : 'en attente',
+              health.mirrorReady ? 'good' : 'neutral') +
+    safetyRow('Copies locales', snaps.length + (snaps.length > 1 ? ' jours' : ' jour'),
+              snaps.length ? 'good' : 'neutral') +
+    safetyRow('Sauvegarde hors appareil', age.text, age.level);
+
+  els.persistBtn.hidden = persisted;
+  syncAttentionDot();
+}
+
+async function toggleSnapshots() {
+  const open = !els.snapshotList.hidden;
+  if (open) { els.snapshotList.hidden = true; return; }
+  const snaps = await snapshotList();
+  if (!snaps.length) {
+    els.snapshotList.innerHTML = '<p class="hint">Aucune copie locale pour l\'instant. Elles se créent automatiquement, une par jour.</p>';
+  } else {
+    els.snapshotList.innerHTML = snaps.map(r => {
+      let n = 0;
+      try {
+        const d = JSON.parse(r.json);
+        n = Array.isArray(d.habits) ? d.habits.length : 0;
+      } catch (e) { /* copie illisible : on l'affiche quand même */ }
+      const day = r.id.slice(5);
+      return (
+        '<div class="snap-item">' +
+          '<span class="d">' + parseKey(day).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }) +
+            '<span class="n"> · ' + n + ' habitudes</span></span>' +
+          '<button data-restore-snap="' + r.id + '">Restaurer</button>' +
+        '</div>'
+      );
+    }).join('');
+  }
+  els.snapshotList.hidden = false;
+}
+
+async function restoreSnapshot(id) {
+  const rec = await idbGet(id);
+  if (!rec || !rec.json) { flash(els.dataInfo, '✗ Copie introuvable', false); return; }
+  if (importFromText(rec.json)) {
+    els.snapshotList.hidden = true;
+    flash(els.dataInfo, '✓ Copie du ' + id.slice(5) + ' restaurée');
+  }
 }
 
 /* ---------- Réglages : rappel quotidien ---------- */
@@ -1596,7 +1896,13 @@ document.addEventListener('click', e => {
 
   if (target.closest('#add-btn')) { openEdit(null); return; }
 
-  if (target.closest('#settings-btn')) { syncSettings(); openSheet('settings'); return; }
+  if (target.closest('#settings-btn')) {
+    syncSettings();
+    renderSafety();
+    els.snapshotList.hidden = true;   /* toujours replié à l'ouverture */
+    openSheet('settings');
+    return;
+  }
 
   const dayNav = target.closest('[data-day-nav]');
   if (dayNav && !dayNav.disabled) {
@@ -1753,6 +2059,27 @@ els.reminderTime.addEventListener('change', () => {
   syncSettings();
 });
 
+els.persistBtn.addEventListener('click', async () => {
+  const granted = await requestPersistence();
+  await renderSafety();
+  flash(els.dataInfo, granted ? '✓ Stockage protégé' : 'Le navigateur a refusé la protection', granted);
+});
+
+$('#snapshots-btn').addEventListener('click', toggleSnapshots);
+
+els.snapshotList.addEventListener('click', e => {
+  const btn = e.target.closest('[data-restore-snap]');
+  if (!btn) return;
+  /* restaurer remplace tout : on demande confirmation en deux temps */
+  if (!btn.classList.contains('danger-armed')) {
+    btn.classList.add('danger-armed');
+    btn.textContent = 'Confirmer ?';
+    setTimeout(() => { btn.classList.remove('danger-armed'); btn.textContent = 'Restaurer'; }, 2500);
+    return;
+  }
+  restoreSnapshot(btn.dataset.restoreSnap);
+});
+
 $('#update-now').addEventListener('click', applyUpdate);
 $('#check-update').addEventListener('click', checkForUpdate);
 
@@ -1819,3 +2146,28 @@ els.versionBadge.textContent = versionLabel();
 syncSettings();
 scheduleReminder();
 renderAll();
+syncWriteWarning();
+
+/* Mise en sécurité, en tâche de fond pour ne pas retarder l'affichage. */
+(async function protectData() {
+  /* 1. demander au navigateur de ne pas évincer nos données */
+  if (!(await storagePersisted())) await requestPersistence();
+
+  /* 2. si localStorage est vide mais qu'une copie existe, on restaure */
+  const restored = await recoverIfEmpty();
+
+  /* 3. écrire/rafraîchir la copie de secours et l'instantané du jour */
+  if (!restored && state.habits.length) {
+    try { mirrorSoon(JSON.stringify(state)); } catch (e) { /* ignoré */ }
+  }
+
+  syncAttentionDot();
+  if (restored) {
+    flash(els.dataInfo, '✓ Données restaurées depuis la copie de secours');
+    els.writeWarning.hidden = false;
+    els.writeWarningText.textContent =
+      'ℹ Vos données ont été restaurées depuis la copie de secours locale. ' +
+      'Pensez à exporter une sauvegarde.';
+    setTimeout(() => { els.writeWarning.hidden = true; }, 12000);
+  }
+})();

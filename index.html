@@ -70,6 +70,10 @@
   </nav>
 </div>
 
+<div id="write-warning" hidden>
+  <span id="write-warning-text"></span>
+</div>
+
 <div id="update-bar" hidden>
   <span>Nouvelle version disponible</span>
   <button id="update-now">Mettre à jour</button>
@@ -143,7 +147,15 @@
   <p class="hint">Le rappel sonne quand l'app est ouverte, et en arrière-plan sur Android une fois
   l'app installée sur l'écran d'accueil. Sur iPhone, il sonne à l'ouverture de l'app.</p>
 
-  <p class="label">Sauvegarde</p>
+  <p class="label">Sécurité des données</p>
+  <div id="safety-rows"></div>
+  <div class="btn-row">
+    <button id="persist-btn" class="btn-ghost" hidden>Protéger le stockage</button>
+    <button id="snapshots-btn" class="btn-ghost">Copies locales</button>
+  </div>
+  <div id="snapshot-list" hidden></div>
+
+  <p class="label">Sauvegarde hors de l'appareil</p>
   <div class="btn-row">
     <button id="export-file" class="btn-ghost">Télécharger (.json)</button>
     <button id="export-copy" class="btn-ghost">Copier</button>
