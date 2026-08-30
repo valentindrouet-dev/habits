@@ -30,6 +30,9 @@
       </svg>
       <span id="ring-label"></span>
     </div>
+    <button id="settings-btn" class="icon-btn" aria-label="Réglages">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.35a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.65 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z"/></svg>
+    </button>
     <button id="add-btn" aria-label="Ajouter une habitude">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
     </button>
@@ -109,6 +112,44 @@
 <section id="sheet-detail" class="sheet" aria-hidden="true">
   <div class="handle"></div>
   <div id="detail-body"></div>
+</section>
+
+<section id="sheet-settings" class="sheet" aria-hidden="true">
+  <div class="handle"></div>
+  <div class="sheet-head">
+    <h2>Réglages</h2>
+    <button class="icon-btn" data-close aria-label="Fermer">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+  </div>
+
+  <p class="label">Rappel quotidien</p>
+  <div class="set-row">
+    <div class="set-text">
+      <h4>Me rappeler chaque jour</h4>
+      <p id="notif-status" class="hint"></p>
+    </div>
+    <input id="reminder-time" type="time" value="20:00" aria-label="Heure du rappel">
+    <button id="reminder-toggle" class="switch" role="switch" aria-checked="false" aria-label="Activer le rappel quotidien"><i></i></button>
+  </div>
+  <p class="hint">Le rappel sonne quand l'app est ouverte, et en arrière-plan sur Android une fois
+  l'app installée sur l'écran d'accueil. Sur iPhone, il sonne à l'ouverture de l'app.</p>
+
+  <p class="label">Sauvegarde</p>
+  <div class="btn-row">
+    <button id="export-file" class="btn-ghost">Télécharger (.json)</button>
+    <button id="export-copy" class="btn-ghost">Copier</button>
+  </div>
+  <p id="data-info" class="hint"></p>
+
+  <p class="label">Restaurer</p>
+  <textarea id="import-text" rows="3" placeholder="Collez ici une sauvegarde JSON…" spellcheck="false"></textarea>
+  <div class="btn-row">
+    <button id="import-file-btn" class="btn-ghost">Choisir un fichier</button>
+    <button id="import-btn" class="btn-ghost danger">Importer</button>
+  </div>
+  <input id="import-file" type="file" accept=".json,application/json" hidden>
+  <p class="hint">L'import remplace toutes les données actuelles.</p>
 </section>
 
 <script src="app.js"></script>

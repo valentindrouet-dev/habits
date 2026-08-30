@@ -18,6 +18,10 @@ stockées sur votre appareil (aucun serveur, aucun compte).
 - 📊 Statistiques **par mois** : réalisations, taux de réussite, calendrier de chaleur, détail par habitude
 - 📈 Statistiques **par année** : grande grille de l'année, courbe « Réalisations / Mois », détail par habitude
 - 📅 Fiche par habitude : grille des 6 derniers mois + **calendrier interactif** pour cocher / corriger un jour passé
+- ⏪ **Cocher dans le passé** : flèches ‹ › sur l'accueil pour revenir à hier ou avant et cocher directement
+- 💾 **Sauvegarde** : export JSON (fichier ou presse-papier) et restauration, dans les Réglages
+- 🔔 **Rappel quotidien** à l'heure de votre choix (voir les limites ci-dessous)
+- ✋ **Réorganisation par glisser-déposer** : appui long sur une habitude puis déplacement (dans les 3 vues)
 - ✏️ Modifier / supprimer habitudes et catégories à tout moment
 
 ## Lancer en local
@@ -41,6 +45,31 @@ Hébergez le dossier sur n'importe quel hébergement statique en HTTPS
 
 L'app s'ouvre alors en plein écran, avec son icône, et fonctionne hors-ligne.
 
+## Rappel quotidien : ce qu'il faut savoir
+
+Le rappel utilise les notifications web, qui n'ont pas les mêmes garanties qu'une app native :
+
+- **Android (installée sur l'écran d'accueil)** : le rappel s'affiche même app fermée,
+  tant que le système n'a pas mis l'app en veille profonde.
+- **iPhone (installée sur l'écran d'accueil, iOS 16.4+)** : les notifications sont possibles,
+  mais iOS ne garantit pas le réveil à heure fixe ; en pratique le rappel arrive
+  de façon fiable à l'ouverture de l'app.
+- **Navigateur simple (non installé)** : le rappel ne sonne que si l'app est ouverte dans un onglet.
+
+Pour un rappel garanti à la seconde près comme une app native, il faudrait une version
+native (Capacitor) ou des notifications push avec un petit serveur — faisable en évolution.
+
+## Sauvegarde
+
+Réglages → **Sauvegarde** :
+
+- *Télécharger (.json)* enregistre un fichier `habitudes-AAAAMMJJ.json` ;
+- *Copier* place la sauvegarde dans le presse-papier (pratique pour l'envoyer par message) ;
+- *Restaurer* accepte un fichier ou un collage, avec une confirmation avant de remplacer les données.
+
+À faire de temps en temps : les données vivent dans le navigateur, et effacer les données
+de site les supprimerait.
+
 ## Structure
 
 | Fichier | Rôle |
@@ -62,15 +91,20 @@ Stockées dans le `localStorage` du navigateur, clé `habits.v1` :
                "createdAt": "2026-08-30", "categoryId": null, "description": "" }],
   "checks": { "idHabitude": { "2026-08-30": 1 } },
   "categories": [{ "id": "…", "name": "Forme", "emoji": "🚴" }],
-  "settings": { "viewMode": "grid", "showDone": true }
+  "settings": {
+    "viewMode": "grid",
+    "showDone": true,
+    "reminder": { "enabled": false, "time": "20:00" }
+  }
 }
 ```
 
+L'ordre du tableau `habits` est celui de l'affichage (modifié par glisser-déposer).
+
 ## Pistes d'amélioration
 
-- Export / import des données (sauvegarde JSON)
-- Rappels / notifications
 - Objectifs « X fois par semaine » plutôt que quotidiens
-- Réordonner les habitudes par glisser-déposer
 - Archiver une habitude sans perdre son historique
-- Version native (Capacitor / React Native) si besoin des stores
+- Sauvegarde automatique vers un cloud (Drive, iCloud…)
+- Rappels par habitude, et non un seul rappel global
+- Version native (Capacitor / React Native) pour des notifications garanties et les stores

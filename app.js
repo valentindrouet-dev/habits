@@ -105,6 +105,7 @@ function normalize(s) {
     categories: Array.isArray(s.categories) ? s.categories : [],
     settings: Object.assign({ viewMode: 'grid', showDone: true }, s.settings || {}),
   };
+  out.settings.reminder = Object.assign({ enabled: false, time: '20:00' }, out.settings.reminder || {});
   for (const h of out.habits) {
     if (h.categoryId === undefined) h.categoryId = null;
     if (typeof h.description !== 'string') h.description = '';
@@ -208,6 +209,7 @@ const now = todayDate();
 const ui = {
   tab: 'home',
   catFilter: null,
+  selectedDay: todayDate(),
   statsMode: 'month',
   statsMonth: new Date(now.getFullYear(), now.getMonth(), 1),
   statsYear: now.getFullYear(),
@@ -255,9 +257,16 @@ const els = {
   catEmojiGrid: $('#cat-emoji-grid'),
   catSave: $('#cat-save'),
   catList: $('#cat-list'),
+  sheetSettings: $('#sheet-settings'),
+  notifStatus: $('#notif-status'),
+  reminderTime: $('#reminder-time'),
+  reminderToggle: $('#reminder-toggle'),
+  dataInfo: $('#data-info'),
+  importText: $('#import-text'),
+  importFile: $('#import-file'),
 };
 
-const SHEETS = { edit: 'sheetEdit', cat: 'sheetCat', detail: 'sheetDetail' };
+const SHEETS = { edit: 'sheetEdit', cat: 'sheetCat', detail: 'sheetDetail', settings: 'sheetSettings' };
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => (
@@ -278,11 +287,10 @@ function catHabits() {
     : state.habits.filter(h => h.categoryId === ui.catFilter);
 }
 
-function visibleHabits() {
+function visibleHabits(selKey) {
   let list = catHabits();
   if (!state.settings.showDone) {
-    const tKey = keyOf(todayDate());
-    list = list.filter(h => !isChecked(h.id, tKey));
+    list = list.filter(h => !isChecked(h.id, selKey));
   }
   return list;
 }
@@ -293,11 +301,13 @@ function renderHeader() {
   const t = todayDate();
   if (ui.tab === 'home') {
     els.title.textContent = 'Habitudes';
+    const selKey = keyOf(ui.selectedDay);
+    const isToday = selKey === keyOf(t);
     const total = state.habits.length;
-    const done = state.habits.filter(h => isChecked(h.id, keyOf(t))).length;
+    const done = state.habits.filter(h => isChecked(h.id, selKey)).length;
     els.subtitle.textContent = (total > 0 && done === total)
-      ? '🎉 Tout est coché aujourd\'hui !'
-      : fmtLongDate(t);
+      ? (isToday ? '🎉 Tout est coché aujourd\'hui !' : '🎉 Journée complète !')
+      : fmtLongDate(ui.selectedDay);
     els.ring.hidden = total === 0;
     if (total > 0) {
       const C = 125.66;
@@ -338,23 +348,23 @@ function chipsHtml(opts) {
 
 /* ---------- Cellules de grilles ---------- */
 
-function cellHtml(h, k, tKey, cls) {
+function cellHtml(h, k, tKey, selKey, cls) {
   let bg;
   if (k > tKey) bg = hexAlpha(h.color, 0.05);
   else if (isChecked(h.id, k)) bg = h.color;
   else bg = hexAlpha(h.color, 0.13);
-  const today = k === tKey ? ' today' : '';
-  return '<i class="' + cls + today + '" style="background:' + bg + '"></i>';
+  const mark = k === selKey ? ' today' : '';
+  return '<i class="' + cls + mark + '" style="background:' + bg + '"></i>';
 }
 
-function weeksGridHtml(h, weeks, cls) {
+function weeksGridHtml(h, weeks, cls, selKey) {
   const t = todayDate();
   const tKey = keyOf(t);
   const start = addDays(mondayOf(t), -(weeks - 1) * 7);
   let html = '';
   for (let w = 0; w < weeks; w++) {
     for (let r = 0; r < 7; r++) {
-      html += cellHtml(h, keyOf(addDays(start, w * 7 + r)), tKey, cls);
+      html += cellHtml(h, keyOf(addDays(start, w * 7 + r)), tKey, selKey, cls);
     }
   }
   return html;
@@ -380,31 +390,31 @@ function habitSubline(h) {
   return 'Commencez aujourd\'hui !';
 }
 
-function tileHtml(h, tKey, monthLabel) {
+function tileHtml(h, selKey, monthLabel) {
   return (
     '<article class="tile" data-card="' + h.id + '">' +
       '<div class="tile-top">' +
-        checkBtnHtml(h, isChecked(h.id, tKey), 'tile-check') +
+        checkBtnHtml(h, isChecked(h.id, selKey), 'tile-check') +
         '<div class="tile-info">' +
           '<h3>' + escapeHtml(h.name) + '</h3>' +
           '<p>' + monthLabel + '</p>' +
         '</div>' +
       '</div>' +
-      '<div class="mini-grid">' + weeksGridHtml(h, WEEKS_TILE, 'c') + '</div>' +
+      '<div class="mini-grid">' + weeksGridHtml(h, WEEKS_TILE, 'c', selKey) + '</div>' +
     '</article>'
   );
 }
 
-function checkRowHtml(h, tKey) {
-  const t = todayDate();
+function checkRowHtml(h, selKey) {
+  const anchor = parseKey(selKey);
   let dots = '';
   for (let i = 6; i >= 0; i--) {
-    const k = keyOf(addDays(t, -i));
+    const k = keyOf(addDays(anchor, -i));
     dots += '<i style="background:' + (isChecked(h.id, k) ? h.color : hexAlpha(h.color, 0.15)) + '"></i>';
   }
   return (
     '<article class="crow" data-card="' + h.id + '">' +
-      checkBtnHtml(h, isChecked(h.id, tKey), 'tile-check') +
+      checkBtnHtml(h, isChecked(h.id, selKey), 'tile-check') +
       '<div class="crow-info">' +
         '<h3>' + escapeHtml(h.name) + '</h3>' +
         '<p>' + habitSubline(h) + '</p>' +
@@ -414,7 +424,7 @@ function checkRowHtml(h, tKey) {
   );
 }
 
-function cardHtml(h, tKey) {
+function cardHtml(h, selKey) {
   return (
     '<article class="card" data-card="' + h.id + '">' +
       '<div class="card-top">' +
@@ -423,16 +433,35 @@ function cardHtml(h, tKey) {
           '<h3>' + escapeHtml(h.name) + '</h3>' +
           '<p>' + habitSubline(h) + '</p>' +
         '</div>' +
-        checkBtnHtml(h, isChecked(h.id, tKey), 'check') +
+        checkBtnHtml(h, isChecked(h.id, selKey), 'check') +
       '</div>' +
-      '<div class="grid26">' + weeksGridHtml(h, WEEKS_WIDE, 'c') + '</div>' +
+      '<div class="grid26">' + weeksGridHtml(h, WEEKS_WIDE, 'c', selKey) + '</div>' +
     '</article>'
   );
 }
 
-function renderHome(animateId) {
-  const tKey = keyOf(todayDate());
+function dayNavHtml() {
+  const t = todayDate();
+  const sel = ui.selectedDay;
+  const isToday = keyOf(sel) === keyOf(t);
+  const back = daysBetween(sel, t);
+  let label;
+  if (isToday) label = "Aujourd'hui";
+  else if (back === 1) label = 'Hier';
+  else label = sel.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
+  return (
+    '<div class="day-nav">' +
+      '<button class="icon-btn" data-day-nav="-1" aria-label="Jour précédent">' + ICON.left + '</button>' +
+      '<button class="day-chip' + (isToday ? '' : ' past') + '" data-day-reset>' +
+        ICON.calendar + label +
+        (isToday ? '' : '<span class="back-hint">· il y a ' + back + ' j</span>') +
+      '</button>' +
+      '<button class="icon-btn" data-day-nav="1" aria-label="Jour suivant"' + (isToday ? ' disabled' : '') + '>' + ICON.right + '</button>' +
+    '</div>'
+  );
+}
 
+function renderHome(animateId) {
   if (!state.habits.length) {
     els.home.innerHTML =
       '<div class="empty fade-in">' +
@@ -444,7 +473,8 @@ function renderHome(animateId) {
     return;
   }
 
-  const list = visibleHabits();
+  const selKey = keyOf(ui.selectedDay);
+  const list = visibleHabits(selKey);
   let content;
   if (!list.length) {
     content =
@@ -458,16 +488,16 @@ function renderHome(animateId) {
   } else {
     const mode = state.settings.viewMode;
     if (mode === 'grid') {
-      const monthLabel = todayDate().toLocaleDateString('fr-FR', { month: 'long' });
-      content = '<div class="tile-grid">' + list.map(h => tileHtml(h, tKey, monthLabel)).join('') + '</div>';
+      const monthLabel = ui.selectedDay.toLocaleDateString('fr-FR', { month: 'long' });
+      content = '<div class="tile-grid" data-sortable>' + list.map(h => tileHtml(h, selKey, monthLabel)).join('') + '</div>';
     } else if (mode === 'check') {
-      content = '<div class="check-list">' + list.map(h => checkRowHtml(h, tKey)).join('') + '</div>';
+      content = '<div class="check-list" data-sortable>' + list.map(h => checkRowHtml(h, selKey)).join('') + '</div>';
     } else {
-      content = list.map(h => cardHtml(h, tKey)).join('');
+      content = '<div data-sortable>' + list.map(h => cardHtml(h, selKey)).join('') + '</div>';
     }
   }
 
-  els.home.innerHTML = chipsHtml({ home: true }) + content;
+  els.home.innerHTML = chipsHtml({ home: true }) + dayNavHtml() + content;
   syncPill();
 
   if (animateId) {
@@ -734,7 +764,7 @@ function detailGridHtml(h) {
   let cells = '';
   for (let w = 0; w < WEEKS_WIDE; w++) {
     for (let r = 0; r < 7; r++) {
-      cells += cellHtml(h, keyOf(addDays(start, w * 7 + r)), tKey, 'c');
+      cells += cellHtml(h, keyOf(addDays(start, w * 7 + r)), tKey, tKey, 'c');
     }
   }
   return (
@@ -1020,6 +1050,275 @@ function deleteHabit(id) {
   renderAll();
 }
 
+/* ---------- Réglages : sauvegarde ---------- */
+
+function exportPayload() {
+  return JSON.stringify({
+    app: 'mes-habitudes',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    data: state,
+  }, null, 2);
+}
+
+function backupName() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  return 'habitudes-' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '.json';
+}
+
+function flash(el, msg, ok) {
+  const prev = el.textContent;
+  el.textContent = msg;
+  el.style.color = ok === false ? 'var(--danger)' : '#4ADE80';
+  setTimeout(() => { el.textContent = prev; el.style.color = ''; }, 2600);
+}
+
+function exportToFile() {
+  const blob = new Blob([exportPayload()], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = backupName();
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  flash(els.dataInfo, '✓ Sauvegarde téléchargée');
+}
+
+async function exportToClipboard() {
+  const text = exportPayload();
+  try {
+    await navigator.clipboard.writeText(text);
+    flash(els.dataInfo, '✓ Sauvegarde copiée');
+  } catch (e) {
+    /* presse-papier refusé : on affiche le texte pour un copier manuel */
+    els.importText.value = text;
+    els.importText.select();
+    flash(els.dataInfo, 'Copiez le texte ci-dessous', false);
+  }
+}
+
+function importFromText(raw) {
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    flash(els.dataInfo, '✗ JSON invalide', false);
+    return false;
+  }
+  const src = (parsed && parsed.data) ? parsed.data : parsed;
+  if (!src || typeof src !== 'object' || !Array.isArray(src.habits)) {
+    flash(els.dataInfo, '✗ Sauvegarde non reconnue', false);
+    return false;
+  }
+  const next = normalize(src);
+  state.habits = next.habits;
+  state.checks = next.checks;
+  state.categories = next.categories;
+  state.settings = next.settings;
+  ui.catFilter = null;
+  ui.selectedDay = todayDate();
+  save();
+  els.importText.value = '';
+  syncSettings();
+  scheduleReminder();
+  renderAll();
+  flash(els.dataInfo, '✓ ' + state.habits.length + ' habitudes restaurées');
+  return true;
+}
+
+function syncSettings() {
+  const r = state.settings.reminder;
+  els.reminderTime.value = r.time;
+  els.reminderToggle.classList.toggle('on', r.enabled);
+  els.reminderToggle.setAttribute('aria-checked', r.enabled ? 'true' : 'false');
+
+  let checks = 0;
+  for (const id in state.checks) checks += Object.keys(state.checks[id]).length;
+  els.dataInfo.textContent = state.habits.length + ' habitudes · ' + checks + ' coches enregistrées';
+
+  const supported = 'Notification' in window;
+  const perm = supported ? Notification.permission : 'unsupported';
+  if (!supported) els.notifStatus.textContent = 'Non pris en charge par ce navigateur';
+  else if (perm === 'denied') els.notifStatus.textContent = 'Notifications bloquées dans les réglages du navigateur';
+  else if (r.enabled) els.notifStatus.textContent = 'Actif tous les jours à ' + r.time;
+  else els.notifStatus.textContent = 'Désactivé';
+}
+
+/* ---------- Réglages : rappel quotidien ---------- */
+
+let reminderTimer = null;
+
+function nextReminderAt() {
+  const [hh, mm] = state.settings.reminder.time.split(':').map(Number);
+  const d = new Date();
+  d.setHours(hh, mm, 0, 0);
+  if (d <= new Date()) d.setDate(d.getDate() + 1);
+  return d;
+}
+
+function pendingCount() {
+  const tKey = keyOf(todayDate());
+  return state.habits.filter(h => !isChecked(h.id, tKey)).length;
+}
+
+function showNotification(body) {
+  const opts = { body, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: 'habits-daily' };
+  /* le service worker est requis sur Android ; sinon, notification directe */
+  if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+    navigator.serviceWorker.ready
+      .then(reg => reg.showNotification('Mes Habitudes', opts))
+      .catch(() => { try { new Notification('Mes Habitudes', opts); } catch (e) {} });
+  } else {
+    try { new Notification('Mes Habitudes', opts); } catch (e) {}
+  }
+}
+
+function fireReminder() {
+  const left = pendingCount();
+  if (left > 0 && 'Notification' in window && Notification.permission === 'granted') {
+    showNotification(left === 1
+      ? 'Il reste 1 habitude à cocher aujourd\'hui.'
+      : 'Il reste ' + left + ' habitudes à cocher aujourd\'hui.');
+  }
+  scheduleReminder();
+}
+
+function scheduleReminder() {
+  clearTimeout(reminderTimer);
+  reminderTimer = null;
+  if (!state.settings.reminder.enabled) return;
+  const delay = nextReminderAt() - new Date();
+  /* setTimeout est limité à ~24,8 j : notre délai (< 24 h) tient toujours */
+  reminderTimer = setTimeout(fireReminder, Math.max(1000, delay));
+}
+
+async function toggleReminder() {
+  const r = state.settings.reminder;
+  if (r.enabled) {
+    r.enabled = false;
+    save();
+    scheduleReminder();
+    syncSettings();
+    return;
+  }
+  if (!('Notification' in window)) {
+    syncSettings();
+    return;
+  }
+  let perm = Notification.permission;
+  if (perm === 'default') {
+    try { perm = await Notification.requestPermission(); } catch (e) { perm = 'denied'; }
+  }
+  if (perm !== 'granted') {
+    syncSettings();
+    return;
+  }
+  r.enabled = true;
+  save();
+  scheduleReminder();
+  syncSettings();
+}
+
+/* ---------- Réorganisation par glisser-déposer ---------- */
+
+const drag = { id: null, el: null, timer: null, active: false, startX: 0, startY: 0 };
+let suppressClick = false;
+
+function orderedIds() {
+  return state.habits.map(h => h.id);
+}
+
+function moveHabit(dragId, overId) {
+  const ids = orderedIds();
+  const from = ids.indexOf(dragId);
+  const to = ids.indexOf(overId);
+  if (from < 0 || to < 0 || from === to) return false;
+  const [h] = state.habits.splice(from, 1);
+  state.habits.splice(to, 0, h);
+  return true;
+}
+
+function cancelDragTimer() {
+  clearTimeout(drag.timer);
+  drag.timer = null;
+}
+
+function endDrag(commit) {
+  cancelDragTimer();
+  if (drag.el) drag.el.classList.remove('dragging');
+  if (drag.active && commit) {
+    save();
+    renderHome();
+    renderStats();
+  }
+  drag.id = null;
+  drag.el = null;
+  drag.active = false;
+}
+
+function onDragMove(x, y) {
+  if (!drag.active) return;
+  const under = document.elementFromPoint(x, y);
+  const card = under && under.closest('[data-card]');
+  if (card && card.dataset.card !== drag.id) {
+    if (moveHabit(drag.id, card.dataset.card)) {
+      /* on redessine juste l'ordre visuel, sans reconstruire le DOM */
+      const container = drag.el.parentElement;
+      const ids = orderedIds();
+      const nodes = [...container.querySelectorAll('[data-card]')];
+      nodes.sort((a, b) => ids.indexOf(a.dataset.card) - ids.indexOf(b.dataset.card));
+      for (const n of nodes) container.appendChild(n);
+    }
+  }
+}
+
+function startDragWatch(card, x, y) {
+  drag.id = card.dataset.card;
+  drag.el = card;
+  drag.startX = x;
+  drag.startY = y;
+  drag.active = false;
+  cancelDragTimer();
+  drag.timer = setTimeout(() => {
+    drag.active = true;
+    card.classList.add('dragging');
+    if (navigator.vibrate) navigator.vibrate(20);
+  }, 350);
+}
+
+els.home.addEventListener('pointerdown', e => {
+  if (e.target.closest('[data-check]') || !els.home.querySelector('[data-sortable]')) return;
+  const card = e.target.closest('[data-card]');
+  if (!card) return;
+  startDragWatch(card, e.clientX, e.clientY);
+});
+
+els.home.addEventListener('pointermove', e => {
+  if (!drag.id) return;
+  if (!drag.active) {
+    /* un vrai défilement annule l'appui long */
+    if (Math.abs(e.clientX - drag.startX) > 8 || Math.abs(e.clientY - drag.startY) > 8) {
+      cancelDragTimer();
+      drag.id = null;
+      drag.el = null;
+    }
+    return;
+  }
+  e.preventDefault();
+  onDragMove(e.clientX, e.clientY);
+}, { passive: false });
+
+for (const evt of ['pointerup', 'pointercancel']) {
+  els.home.addEventListener(evt, () => {
+    const wasActive = drag.active;
+    endDrag(true);
+    if (wasActive) suppressClick = true;
+  });
+}
+
 /* ---------- Coches ---------- */
 
 function toggleCheck(id, key, opts) {
@@ -1076,10 +1375,13 @@ function renderAll() {
 document.addEventListener('click', e => {
   const target = e.target;
 
+  /* un glisser-déposer venant de se terminer ne doit pas ouvrir la fiche */
+  if (suppressClick) { suppressClick = false; return; }
+
   const checkBtn = target.closest('[data-check]');
   if (checkBtn) {
     e.stopPropagation();
-    toggleCheck(checkBtn.dataset.check, keyOf(todayDate()), { fromHome: true });
+    toggleCheck(checkBtn.dataset.check, keyOf(ui.selectedDay), { fromHome: true });
     return;
   }
 
@@ -1087,6 +1389,26 @@ document.addEventListener('click', e => {
   if (tab) { setTab(tab.dataset.tab); return; }
 
   if (target.closest('#add-btn')) { openEdit(null); return; }
+
+  if (target.closest('#settings-btn')) { syncSettings(); openSheet('settings'); return; }
+
+  const dayNav = target.closest('[data-day-nav]');
+  if (dayNav && !dayNav.disabled) {
+    const next = addDays(ui.selectedDay, +dayNav.dataset.dayNav);
+    if (next <= todayDate()) {
+      ui.selectedDay = next;
+      renderHeader();
+      renderHome();
+    }
+    return;
+  }
+
+  if (target.closest('[data-day-reset]')) {
+    ui.selectedDay = todayDate();
+    renderHeader();
+    renderHome();
+    return;
+  }
 
   const view = target.closest('[data-view]');
   if (view) {
@@ -1208,6 +1530,49 @@ document.addEventListener('click', e => {
   }
 });
 
+/* Réglages : rappel + sauvegarde */
+
+els.reminderToggle.addEventListener('click', toggleReminder);
+
+els.reminderTime.addEventListener('change', () => {
+  const v = els.reminderTime.value;
+  if (!/^\d{2}:\d{2}$/.test(v)) return;
+  state.settings.reminder.time = v;
+  save();
+  scheduleReminder();
+  syncSettings();
+});
+
+$('#export-file').addEventListener('click', exportToFile);
+$('#export-copy').addEventListener('click', exportToClipboard);
+
+$('#import-file-btn').addEventListener('click', () => els.importFile.click());
+
+els.importFile.addEventListener('change', () => {
+  const file = els.importFile.files && els.importFile.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => importFromText(String(reader.result));
+  reader.onerror = () => flash(els.dataInfo, '✗ Lecture du fichier impossible', false);
+  reader.readAsText(file);
+  els.importFile.value = '';
+});
+
+$('#import-btn').addEventListener('click', e => {
+  const btn = e.currentTarget;
+  const raw = els.importText.value.trim();
+  if (!raw) { flash(els.dataInfo, 'Collez d\'abord une sauvegarde', false); return; }
+  if (!btn.classList.contains('danger-armed')) {
+    btn.classList.add('danger-armed');
+    btn.textContent = 'Confirmer ?';
+    setTimeout(() => { btn.classList.remove('danger-armed'); btn.textContent = 'Importer'; }, 2500);
+    return;
+  }
+  btn.classList.remove('danger-armed');
+  btn.textContent = 'Importer';
+  importFromText(raw);
+});
+
 els.editName.addEventListener('input', syncEditControls);
 els.catName.addEventListener('input', syncCatControls);
 
@@ -1224,13 +1589,19 @@ document.addEventListener('keydown', e => {
 
 /* Changement de jour (l'app reste ouverte pendant la nuit, retour au premier plan…) */
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && keyOf(todayDate()) !== ui.lastRenderDay) {
-    ui.lastRenderDay = keyOf(todayDate());
+  if (document.hidden) return;
+  const t = keyOf(todayDate());
+  if (t !== ui.lastRenderDay) {
+    if (ui.lastRenderDay === keyOf(ui.selectedDay)) ui.selectedDay = todayDate();
+    ui.lastRenderDay = t;
     renderAll();
   }
+  scheduleReminder();
 });
 
 /* ---------- Démarrage ---------- */
 
 buildPickers();
+syncSettings();
+scheduleReminder();
 renderAll();
