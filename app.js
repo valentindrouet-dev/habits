@@ -1074,12 +1074,42 @@ function flash(el, msg, ok) {
   setTimeout(() => { el.textContent = prev; el.style.color = ''; }, 2600);
 }
 
-function exportToFile() {
-  const blob = new Blob([exportPayload()], { type: 'application/json' });
+/* Hôte qui interdit les téléchargements directs (aperçu en bac à sable) :
+   on passe par son API d'enregistrement quand elle existe. */
+let hostSave;
+
+async function getHostSave() {
+  if (hostSave !== undefined) return hostSave;
+  hostSave = null;
+  try {
+    if (window.claude && typeof window.claude.use === 'function') {
+      hostSave = await window.claude.use('downloads');
+    }
+  } catch (e) { hostSave = null; }
+  return hostSave;
+}
+
+async function exportToFile() {
+  const text = exportPayload();
+  const name = backupName();
+
+  const host = await getHostSave();
+  if (host) {
+    try {
+      await host.save({ filename: name, data: text });
+      flash(els.dataInfo, '✓ Sauvegarde enregistrée');
+    } catch (e) {
+      const declined = e && e.code === 'declined';
+      flash(els.dataInfo, declined ? 'Enregistrement annulé' : '✗ Enregistrement impossible', false);
+    }
+    return;
+  }
+
+  const blob = new Blob([text], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = backupName();
+  a.download = name;
   document.body.appendChild(a);
   a.click();
   a.remove();
