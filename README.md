@@ -13,8 +13,11 @@ stockées sur votre appareil (aucun serveur, aucun compte).
 - 🎨 Autant d'habitudes que vous voulez, chacune avec son **emoji**, sa **couleur** et une description
 - 🏷️ **Catégories** (avec emoji) pour filtrer les habitudes, + bouton « Fait » pour masquer ce qui est déjà coché
 - 🔲 **3 modes d'affichage** (sélecteur flottant en bas) : grille de tuiles, liste de contrôle, grandes cartes
-- 🔍 **3 tailles par mode** (compact / normal / large) : appuyez sur l'icône de la vue active,
-  ou pincez l'écran. Chaque vue garde sa propre taille
+- 🔍 **3 tailles par mode** : en grille, le bouton chiffré de la pilule choisit
+  **4, 3 ou 2 habitudes par ligne** ; ailleurs S / M / L. Réglable au bouton
+  ou au **pincement à deux doigts**. Chaque vue garde sa propre taille
+- 👉 **Balayage gauche/droite** sur le calendrier du mois (fiche d'habitude et statistiques)
+  pour passer d'un mois à l'autre
 - 🗓️ Mini-grille **en lecture calendrier** sur chaque tuile : 7 colonnes (lundi → dimanche),
   une ligne par semaine ; en taille Large, l'en-tête L M M J V S D est affiché.
   Une colonne = toujours le même jour de la semaine, ce qui rend les motifs visibles
@@ -26,7 +29,8 @@ stockées sur votre appareil (aucun serveur, aucun compte).
 - ⏪ **Cocher dans le passé** : flèches ‹ › sur l'accueil pour revenir à hier ou avant et cocher directement
 - 💾 **Sauvegarde** : export JSON (fichier ou presse-papier) et restauration, dans les Réglages
 - 🔔 **Rappel quotidien** à l'heure de votre choix (voir les limites ci-dessous)
-- ✋ **Réorganisation par glisser-déposer** : appui long sur une habitude puis déplacement (dans les 3 vues)
+- ✋ **Réorganisation par glisser-déposer** : appui long sur une habitude puis déplacement
+  (dans les 3 vues, tactile et souris)
 - ✏️ Modifier / supprimer habitudes et catégories à tout moment
 
 ## Lancer en local
@@ -56,7 +60,7 @@ L'app est servie par un *service worker* en « réseau d'abord » pour son code
 (HTML/CSS/JS) : **au lancement suivant un déploiement, la nouvelle version est
 chargée automatiquement**. Le cache ne sert que de secours hors-ligne.
 
-La version installée s'affiche en petit **à droite du titre** (`v0.07`), et dans
+La version installée s'affiche en petit **à droite du titre** (`v0.08`), et dans
 Réglages → **Version**, avec un bouton pour forcer une vérification. Si une nouvelle
 version arrive pendant que l'app est ouverte, un bandeau « Nouvelle version
 disponible » apparaît.
@@ -161,6 +165,18 @@ l'engrenage passé 14 jours. Un rythme mensuel suffit largement.
 La restauration (fichier ou collage) demande une confirmation en deux temps,
 car elle remplace tout.
 
+## Gestes tactiles
+
+iOS ignore `preventDefault()` sur `pointermove` : dès qu'un défilement a commencé, il
+ne peut plus être annulé. Les gestes utilisent donc des **événements tactiles non
+passifs**, et bloquent le défilement avant qu'il ne démarre (pendant l'appui long, le
+doigt n'a pas bougé, donc rien n'est encore lancé). La souris est gérée en parallèle
+pour l'ordinateur.
+
+Le balayage horizontal ignore volontairement les gestes partis des **32 premiers pixels
+de chaque bord** : cette zone appartient au geste « page précédente » du navigateur, qui
+ne peut pas lui être repris — le concurrencer faisait quitter l'app.
+
 ## Structure
 
 | Fichier | Rôle |
@@ -188,6 +204,7 @@ Stockées dans le `localStorage` du navigateur, clé `habits.v1` :
     "showDone": true,
     "reminder": { "enabled": false, "time": "20:00" },
     "zoom": { "grid": 1, "check": 1, "list": 1 },
+    "//zoom": "grille : 0 = 4 par ligne, 1 = 3, 2 = 2",
     "lastBackupAt": "2026-08-30T16:00:00.000Z"
   }
 }

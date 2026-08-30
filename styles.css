@@ -36,8 +36,12 @@ html, body {
 body {
   min-height: 100vh;
   padding-bottom: calc(150px + env(safe-area-inset-bottom));
-  overscroll-behavior-y: none;
+  /* -x empêche qu'un balayage horizontal soit interprété comme
+     « page précédente » et fasse quitter l'app */
+  overscroll-behavior: none;
 }
+
+html { overscroll-behavior-x: none; }
 
 body.locked { overflow: hidden; }
 
@@ -55,6 +59,7 @@ button {
   max-width: 520px;
   margin: 0 auto;
   padding: 0 14px;
+  overflow-x: clip;      /* rien ne doit pouvoir faire défiler la page de côté */
 }
 
 .mono { font-family: var(--mono); }
@@ -269,6 +274,10 @@ button {
   border-radius: 18px;
   padding: 11px;
   cursor: pointer;
+  /* sans min-width:0, un nom long impose sa largeur minimale à la colonne
+     et fait déborder toute la grille hors de l'écran */
+  min-width: 0;
+  overflow: hidden;
 }
 
 .tile:active { background: #17171d; }
@@ -373,6 +382,7 @@ button {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -423,6 +433,8 @@ button {
   padding: 14px;
   margin-top: 12px;
   cursor: pointer;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .card:active { background: #17171d; }
@@ -1317,9 +1329,9 @@ input[type="time"]:focus { border-color: var(--accent); }
 
 /* --- Vue grille : le nombre de colonnes porte le zoom --- */
 
-.tile-grid.z0 { grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 8px; }
-.tile-grid.z1 { grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 10px; }
-.tile-grid.z2 { grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 12px; }
+.tile-grid.z0 { grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.tile-grid.z1 { grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.tile-grid.z2 { grid-template-columns: repeat(2, 1fr); gap: 12px; }
 
 .tile-grid.z0 .tile { padding: 8px; border-radius: 15px; }
 .tile-grid.z2 .tile { padding: 14px; border-radius: 22px; }
@@ -1661,3 +1673,44 @@ input[type="time"]:focus { border-color: var(--accent); }
 
 #notif-actions:empty { display: none; }
 #notif-actions { margin-top: 10px; }
+
+/* ---------- Bouton de taille dans la pilule ---------- */
+
+.pill-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 6px 2px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+#size-btn {
+  width: 42px;
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--dim);
+  transition: color 0.2s, background 0.2s;
+}
+
+#size-btn:active { background: rgba(255, 255, 255, 0.06); }
+#size-btn .lvl { display: none; }
+
+/* ---------- Balayage entre les mois ---------- */
+
+.swipeable {
+  touch-action: pan-y;      /* le défilement vertical reste possible */
+  overflow: hidden;
+}
+
+.slide-from-right { animation: slideFromRight 0.24s cubic-bezier(0.32, 0.72, 0, 1); }
+.slide-from-left  { animation: slideFromLeft  0.24s cubic-bezier(0.32, 0.72, 0, 1); }
+
+@keyframes slideFromRight {
+  from { transform: translateX(28%); opacity: 0.3; }
+  to   { transform: none; opacity: 1; }
+}
+
+@keyframes slideFromLeft {
+  from { transform: translateX(-28%); opacity: 0.3; }
+  to   { transform: none; opacity: 1; }
+}

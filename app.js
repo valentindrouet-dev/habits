@@ -12,7 +12,7 @@
    ============================================================ */
 
 const STORE_KEY = 'habits.v1';
-const APP_VERSION = '0.07';
+const APP_VERSION = '0.08';
 const WEEKS_TILE = 7;
 const WEEKS_WIDE = 26;
 
@@ -24,6 +24,7 @@ const ZOOM_WEEKS = {
 };
 const ZOOM_DOTS = [7, 7, 14];
 const ZOOM_NAMES = ['Compact', 'Normal', 'Large'];
+const GRID_COLS = [4, 3, 2];   /* habitudes par ligne, du plus dense au plus grand */
 
 const PALETTE = [
   '#FF6B6B', '#FF9F43', '#FFD166', '#A3E635', '#4ADE80', '#2DD4BF',
@@ -470,6 +471,7 @@ const els = {
   importFile: $('#import-file'),
   updateBar: $('#update-bar'),
   versionBadge: $('#version-badge'),
+  sizeLabel: $('#size-label'),
   notifHelp: $('#notif-help'),
   notifActions: $('#notif-actions'),
   settingsBtn: $('#settings-btn'),
@@ -741,8 +743,21 @@ function renderHome(animateId) {
   }
 }
 
+function sizeLabelFor(mode, z) {
+  return mode === 'grid' ? String(GRID_COLS[z]) : ['S', 'M', 'L'][z];
+}
+
 function syncPill() {
   els.pill.hidden = ui.tab !== 'home' || !state.habits.length;
+  const mode = state.settings.viewMode;
+  const z = zoomOf(mode);
+  els.sizeLabel.textContent = sizeLabelFor(mode, z);
+  els.pill.querySelector('#size-btn').setAttribute(
+    'aria-label',
+    mode === 'grid'
+      ? GRID_COLS[z] + ' habitudes par ligne — appuyez pour changer'
+      : 'Taille : ' + ZOOM_NAMES[z] + ' — appuyez pour changer'
+  );
   for (const b of els.pill.children) {
     const active = b.dataset.view === state.settings.viewMode;
     b.classList.toggle('active', active);
@@ -768,7 +783,11 @@ function showZoomToast() {
     zoomToast.id = 'zoom-toast';
     document.body.appendChild(zoomToast);
   }
-  zoomToast.textContent = ZOOM_NAMES[zoomOf()];
+  const mode = state.settings.viewMode;
+  const z = zoomOf(mode);
+  zoomToast.textContent = mode === 'grid'
+    ? GRID_COLS[z] + ' par ligne'
+    : ZOOM_NAMES[z];
   zoomToast.classList.add('show');
   clearTimeout(zoomToastTimer);
   zoomToastTimer = setTimeout(() => zoomToast.classList.remove('show'), 900);
@@ -867,8 +886,10 @@ function monthHeatHtml(habits, y, m) {
   }
   return (
     '<div class="stats-card">' +
-      '<div class="heat-head">' + DAY_LETTERS.map(l => '<span>' + l.replace('.', '') + '</span>').join('') + '</div>' +
-      '<div class="heat">' + cells + '</div>' +
+      '<div id="heat-swipe" class="swipeable">' +
+        '<div class="heat-head">' + DAY_LETTERS.map(l => '<span>' + l.replace('.', '') + '</span>').join('') + '</div>' +
+        '<div class="heat">' + cells + '</div>' +
+      '</div>' +
     '</div>'
   );
 }
@@ -897,6 +918,23 @@ function habitRowsHtml(habits, fromKey, toKey) {
       }).join('') +
     '</div>'
   );
+}
+
+/* Décale la période des stats, sans dépasser le mois / l'année en cours. */
+function shiftStatsPeriod(dir) {
+  const t = todayDate();
+  if (ui.statsMode === 'month') {
+    const next = new Date(ui.statsMonth.getFullYear(), ui.statsMonth.getMonth() + dir, 1);
+    if (next > new Date(t.getFullYear(), t.getMonth(), 1)) return false;
+    ui.statsMonth = next;
+  } else {
+    const next = ui.statsYear + dir;
+    if (next > t.getFullYear()) return false;
+    ui.statsYear = next;
+  }
+  renderStats();
+  slideIn($('#heat-swipe'), dir);
+  return true;
 }
 
 function renderStats() {
@@ -971,6 +1009,10 @@ function renderStats() {
         '</div>' +
         streakTiles) +
     habitRowsHtml(habits, fromKey, toKey);
+
+  attachSwipe($('#heat-swipe'),
+    () => shiftStatsPeriod(-1),
+    () => shiftStatsPeriod(1));
 
   if (!isMonth) {
     buildAreaChart(habits, ui.statsYear);
@@ -1089,8 +1131,10 @@ function calendarHtml(h) {
 
   const canNext = y < t.getFullYear() || (y === t.getFullYear() && m < t.getMonth());
   return (
-    '<div class="cal-head">' + DAY_LETTERS.map(l => '<span>' + l + '</span>').join('') + '</div>' +
-    '<div class="cal">' + cells + '</div>' +
+    '<div id="cal-swipe" class="swipeable">' +
+      '<div class="cal-head">' + DAY_LETTERS.map(l => '<span>' + l + '</span>').join('') + '</div>' +
+      '<div class="cal">' + cells + '</div>' +
+    '</div>' +
     '<div class="cal-nav">' +
       '<div class="dchip">' + ICON.calendar + fmtMonthYear(ui.detailMonth) + '</div>' +
       '<div class="spacer"></div>' +
@@ -1098,6 +1142,17 @@ function calendarHtml(h) {
       '<button class="icon-btn" data-cal-nav="1" aria-label="Mois suivant"' + (canNext ? '' : ' disabled') + '>' + ICON.right + '</button>' +
     '</div>'
   );
+}
+
+/* Décale le mois de la fiche, sans jamais dépasser le mois courant. */
+function shiftDetailMonth(dir) {
+  const t = todayDate();
+  const next = new Date(ui.detailMonth.getFullYear(), ui.detailMonth.getMonth() + dir, 1);
+  if (next > new Date(t.getFullYear(), t.getMonth(), 1)) return false;
+  ui.detailMonth = next;
+  renderDetail();
+  slideIn($('#cal-swipe'), dir);
+  return true;
 }
 
 function renderDetail() {
@@ -1128,6 +1183,11 @@ function renderDetail() {
 
   const scroller = $('#dgrid-scroll');
   if (scroller) scroller.scrollLeft = scroller.scrollWidth;
+
+  /* balayage gauche/droite sur le calendrier pour changer de mois */
+  attachSwipe($('#cal-swipe'),
+    () => shiftDetailMonth(-1),
+    () => shiftDetailMonth(1));
 }
 
 /* ---------- Feuilles (ouverture / fermeture) ---------- */
@@ -1777,7 +1837,24 @@ async function toggleReminder() {
 /* ---------- Réorganisation par glisser-déposer ---------- */
 
 const drag = { id: null, el: null, timer: null, active: false, startX: 0, startY: 0 };
+const pinch = { active: false, startDist: 0, startZoom: 1 };
+
+/* Après un geste, on ignore le clic de synthèse qui suit — mais seulement
+   celui-là : sans expiration, le tap suivant de l'utilisateur serait avalé
+   sur les appareils qui n'émettent pas ce clic. */
 let suppressClick = false;
+let suppressTimer = null;
+
+function suppressNextClick() {
+  suppressClick = true;
+  clearTimeout(suppressTimer);
+  suppressTimer = setTimeout(() => { suppressClick = false; }, 400);
+}
+
+function touchDistance(touches) {
+  return Math.hypot(touches[0].clientX - touches[1].clientX,
+                    touches[0].clientY - touches[1].clientY);
+}
 
 function orderedIds() {
   return state.habits.map(h => h.id);
@@ -1841,36 +1918,116 @@ function startDragWatch(card, x, y) {
   }, 350);
 }
 
-els.home.addEventListener('pointerdown', e => {
-  if (e.target.closest('[data-check]') || !els.home.querySelector('[data-sortable]')) return;
-  if (touchPts.size >= 1) return;      /* deuxième doigt : c'est un pincement */
-  const card = e.target.closest('[data-card]');
+/* Gestes tactiles.
+   iOS ignore preventDefault() sur pointermove : dès qu'un défilement a
+   commencé, il ne peut plus être annulé. On travaille donc en événements
+   tactiles non passifs, et on bloque le défilement AVANT qu'il ne démarre
+   (le doigt n'a pas bougé pendant l'appui long, donc rien n'est encore lancé). */
+
+function cardFrom(target) {
+  if (!target || !target.closest) return null;
+  if (target.closest('[data-check]')) return null;
+  if (!els.home.querySelector('[data-sortable]')) return null;
+  return target.closest('[data-card]');
+}
+
+function dragCancelWatch() {
+  cancelDragTimer();
+  drag.id = null;
+  drag.el = null;
+}
+
+function finishDrag() {
+  const wasActive = drag.active;
+  endDrag(true);
+  if (wasActive) suppressNextClick();
+}
+
+/* --- tactile --- */
+
+els.home.addEventListener('touchstart', e => {
+  if (e.touches.length === 2) {
+    dragCancelWatch();
+    endDrag(false);
+    pinch.active = true;
+    pinch.startDist = touchDistance(e.touches);
+    pinch.startZoom = zoomOf();
+    return;
+  }
+  if (e.touches.length !== 1) return;
+  const card = cardFrom(e.target);
+  if (!card) return;
+  const t = e.touches[0];
+  startDragWatch(card, t.clientX, t.clientY);
+}, { passive: true });
+
+els.home.addEventListener('touchmove', e => {
+  /* pincement : deux doigts */
+  if (pinch.active && e.touches.length === 2) {
+    e.preventDefault();
+    const ratio = touchDistance(e.touches) / (pinch.startDist || 1);
+    let level = pinch.startZoom;
+    if (ratio > 1.3) level = pinch.startZoom + 1;
+    else if (ratio < 0.77) level = pinch.startZoom - 1;
+    if (setZoom(level)) {
+      pinch.startDist = touchDistance(e.touches);
+      pinch.startZoom = zoomOf();
+      suppressNextClick();
+    }
+    return;
+  }
+
+  if (!drag.id || e.touches.length !== 1) return;
+  const t = e.touches[0];
+
+  if (!drag.active) {
+    /* le doigt bouge avant la fin de l'appui long : c'est un défilement */
+    if (Math.abs(t.clientX - drag.startX) > 10 || Math.abs(t.clientY - drag.startY) > 10) {
+      dragCancelWatch();
+    }
+    return;
+  }
+  e.preventDefault();          /* possible ici : aucun défilement n'a démarré */
+  onDragMove(t.clientX, t.clientY);
+}, { passive: false });
+
+for (const evt of ['touchend', 'touchcancel']) {
+  els.home.addEventListener(evt, e => {
+    if (e.touches.length === 0) pinch.active = false;
+    finishDrag();
+  });
+}
+
+/* iOS zoome la page sur un pincement : on le neutralise sur la liste */
+for (const evt of ['gesturestart', 'gesturechange']) {
+  els.home.addEventListener(evt, e => e.preventDefault());
+}
+
+/* --- souris (ordinateur) --- */
+
+els.home.addEventListener('mousedown', e => {
+  if (e.button !== 0) return;
+  const card = cardFrom(e.target);
   if (!card) return;
   startDragWatch(card, e.clientX, e.clientY);
 });
 
-els.home.addEventListener('pointermove', e => {
+window.addEventListener('mousemove', e => {
   if (!drag.id) return;
   if (!drag.active) {
-    /* un vrai défilement annule l'appui long */
-    if (Math.abs(e.clientX - drag.startX) > 8 || Math.abs(e.clientY - drag.startY) > 8) {
-      cancelDragTimer();
-      drag.id = null;
-      drag.el = null;
-    }
+    if (Math.abs(e.clientX - drag.startX) > 10 || Math.abs(e.clientY - drag.startY) > 10) dragCancelWatch();
     return;
   }
   e.preventDefault();
   onDragMove(e.clientX, e.clientY);
-}, { passive: false });
+});
 
-for (const evt of ['pointerup', 'pointercancel']) {
-  els.home.addEventListener(evt, () => {
-    const wasActive = drag.active;
-    endDrag(true);
-    if (wasActive) suppressClick = true;
-  });
-}
+window.addEventListener('mouseup', finishDrag);
+
+/* un appui long ne doit pas ouvrir le menu contextuel pendant un déplacement */
+els.home.addEventListener('contextmenu', e => {
+  if (drag.active) e.preventDefault();
+});
 
 /* ---------- Mises à jour de l'app ---------- */
 
@@ -1914,49 +2071,55 @@ async function checkForUpdate() {
 
 window.addEventListener('app-update-ready', showUpdateBar);
 
-/* ---------- Pincement pour zoomer ---------- */
+/* ---------- Balayage horizontal (mois précédent / suivant) ---------- */
 
-const pinch = { active: false, startDist: 0, startZoom: 1 };
-const touchPts = new Map();
+/* Le geste doit cohabiter avec le défilement vertical de la feuille :
+   on ne prend la main que si le mouvement est franchement horizontal. */
+const EDGE_ZONE = 32;   /* bande réservée au geste « retour » du système */
 
-function pinchDistance() {
-  const [a, b] = [...touchPts.values()];
-  return Math.hypot(a.x - b.x, a.y - b.y);
+function attachSwipe(el, onPrev, onNext) {
+  if (!el) return;
+  let x0 = 0, y0 = 0, tracking = false, decided = false, horizontal = false;
+
+  el.addEventListener('touchstart', e => {
+    if (e.touches.length !== 1) { tracking = false; return; }
+    x0 = e.touches[0].clientX;
+    y0 = e.touches[0].clientY;
+    /* Un geste parti du bord de l'écran appartient au navigateur (retour
+       arrière) : impossible de le lui reprendre, on ne le concurrence pas. */
+    if (x0 < EDGE_ZONE || x0 > window.innerWidth - EDGE_ZONE) { tracking = false; return; }
+    tracking = true;
+    decided = false;
+    horizontal = false;
+  }, { passive: true });
+
+  el.addEventListener('touchmove', e => {
+    if (!tracking || e.touches.length !== 1) return;
+    const dx = e.touches[0].clientX - x0;
+    const dy = e.touches[0].clientY - y0;
+    if (!decided && (Math.abs(dx) > 12 || Math.abs(dy) > 12)) {
+      decided = true;
+      horizontal = Math.abs(dx) > Math.abs(dy) * 1.4;
+    }
+    if (decided && horizontal) e.preventDefault();   /* on garde le geste */
+  }, { passive: false });
+
+  el.addEventListener('touchend', e => {
+    if (!tracking || !decided || !horizontal) { tracking = false; return; }
+    tracking = false;
+    const dx = e.changedTouches[0].clientX - x0;
+    if (Math.abs(dx) < 45) return;
+    suppressNextClick();
+    if (dx > 0) onPrev();
+    else onNext();
+  });
 }
 
-els.home.addEventListener('pointerdown', e => {
-  if (e.pointerType !== 'touch') return;
-  touchPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  if (touchPts.size === 2) {
-    endDrag(false);            /* un pincement n'est pas un déplacement */
-    pinch.active = true;
-    pinch.startDist = pinchDistance();
-    pinch.startZoom = zoomOf();
-  }
-});
-
-els.home.addEventListener('pointermove', e => {
-  if (!touchPts.has(e.pointerId)) return;
-  touchPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  if (!pinch.active || touchPts.size !== 2) return;
-  e.preventDefault();
-  const ratio = pinchDistance() / (pinch.startDist || 1);
-  /* écarter les doigts agrandit : ~35 % d'écart par palier */
-  let level = pinch.startZoom;
-  if (ratio > 1.35) level = pinch.startZoom + 1;
-  else if (ratio < 0.74) level = pinch.startZoom - 1;
-  if (setZoom(level)) {
-    pinch.startDist = pinchDistance();
-    pinch.startZoom = zoomOf();
-    suppressClick = true;
-  }
-}, { passive: false });
-
-for (const evt of ['pointerup', 'pointercancel', 'pointerleave']) {
-  els.home.addEventListener(evt, e => {
-    touchPts.delete(e.pointerId);
-    if (touchPts.size < 2) pinch.active = false;
-  });
+function slideIn(el, dir) {
+  if (!el) return;
+  el.classList.remove('slide-from-left', 'slide-from-right');
+  void el.offsetWidth;                  /* relance l'animation */
+  el.classList.add(dir > 0 ? 'slide-from-left' : 'slide-from-right');
 }
 
 /* ---------- Coches ---------- */
@@ -2015,8 +2178,12 @@ function renderAll() {
 document.addEventListener('click', e => {
   const target = e.target;
 
-  /* un glisser-déposer venant de se terminer ne doit pas ouvrir la fiche */
-  if (suppressClick) { suppressClick = false; return; }
+  /* un geste venant de se terminer ne doit pas ouvrir la fiche */
+  if (suppressClick) {
+    suppressClick = false;
+    clearTimeout(suppressTimer);
+    return;
+  }
 
   const checkBtn = target.closest('[data-check]');
   if (checkBtn) {
@@ -2055,6 +2222,8 @@ document.addEventListener('click', e => {
     renderHome();
     return;
   }
+
+  if (target.closest('#size-btn')) { cycleZoom(); return; }
 
   const view = target.closest('[data-view]');
   if (view) {
@@ -2101,13 +2270,7 @@ document.addEventListener('click', e => {
 
   const period = target.closest('[data-period]');
   if (period && !period.disabled) {
-    const dir = +period.dataset.period;
-    if (ui.statsMode === 'month') {
-      ui.statsMonth = new Date(ui.statsMonth.getFullYear(), ui.statsMonth.getMonth() + dir, 1);
-    } else {
-      ui.statsYear += dir;
-    }
-    renderStats();
+    shiftStatsPeriod(+period.dataset.period);
     return;
   }
 
@@ -2174,8 +2337,7 @@ document.addEventListener('click', e => {
 
   const calNav = target.closest('[data-cal-nav]');
   if (calNav && !calNav.disabled) {
-    ui.detailMonth = new Date(ui.detailMonth.getFullYear(), ui.detailMonth.getMonth() + +calNav.dataset.calNav, 1);
-    renderDetail();
+    shiftDetailMonth(+calNav.dataset.calNav);
     return;
   }
 });
