@@ -4,7 +4,7 @@
    « cache d'abord » pour les ressources figées (icônes). Le cache reste le
    filet de sécurité hors-ligne dans les deux cas. */
 
-const VERSION = 'v4';
+const VERSION = 'v5';
 const CACHE = 'habits-' + VERSION;
 
 const SHELL = [

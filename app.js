@@ -12,7 +12,7 @@
    ============================================================ */
 
 const STORE_KEY = 'habits.v1';
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '0.04';
 const WEEKS_TILE = 7;
 const WEEKS_WIDE = 26;
 
@@ -280,11 +280,16 @@ const els = {
   importText: $('#import-text'),
   importFile: $('#import-file'),
   updateBar: $('#update-bar'),
+  versionBadge: $('#version-badge'),
   updateStatus: $('#update-status'),
   appVersion: $('#app-version'),
 };
 
 const SHEETS = { edit: 'sheetEdit', cat: 'sheetCat', detail: 'sheetDetail', settings: 'sheetSettings' };
+
+function versionLabel() {
+  return 'v' + APP_VERSION;
+}
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => (
@@ -1243,7 +1248,7 @@ function syncSettings() {
   for (const id in state.checks) checks += Object.keys(state.checks[id]).length;
   els.dataInfo.textContent = state.habits.length + ' habitudes · ' + checks + ' coches enregistrées';
 
-  els.appVersion.textContent = 'Mes Habitudes ' + APP_VERSION;
+  els.appVersion.textContent = 'Mes Habitudes ' + versionLabel();
   if (!els.updateStatus.dataset.busy) {
     els.updateStatus.textContent = navigator.serviceWorker && navigator.serviceWorker.controller
       ? 'Installée · fonctionne hors-ligne'
@@ -1808,6 +1813,7 @@ document.addEventListener('visibilitychange', () => {
 /* ---------- Démarrage ---------- */
 
 buildPickers();
+els.versionBadge.textContent = versionLabel();
 syncSettings();
 scheduleReminder();
 renderAll();

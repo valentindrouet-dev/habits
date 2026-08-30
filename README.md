@@ -53,9 +53,13 @@ L'app est servie par un *service worker* en « réseau d'abord » pour son code
 (HTML/CSS/JS) : **au lancement suivant un déploiement, la nouvelle version est
 chargée automatiquement**. Le cache ne sert que de secours hors-ligne.
 
-Si une nouvelle version arrive pendant que l'app est ouverte, un bandeau
-« Nouvelle version disponible » apparaît. Réglages → **Version** affiche la version
-installée et permet de forcer une vérification.
+La version installée s'affiche en petit **à droite du titre** (`v0.04`), et dans
+Réglages → **Version**, avec un bouton pour forcer une vérification. Si une nouvelle
+version arrive pendant que l'app est ouverte, un bandeau « Nouvelle version
+disponible » apparaît.
+
+Pour publier une nouvelle version : incrémenter `APP_VERSION` dans `app.js`
+et `VERSION` dans `sw.js`, puis pousser.
 
 > Une version déjà installée avant ce changement pouvait rester bloquée sur
 > l'ancien code (l'ancien service worker servait tout depuis le cache).
