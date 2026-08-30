@@ -1611,3 +1611,53 @@ input[type="time"]:focus { border-color: var(--accent); }
   background: #FBBF24;
   box-shadow: 0 0 0 2px var(--bg);
 }
+
+/* ---------- Aide au déblocage des notifications ---------- */
+
+#notif-help:empty { display: none; }
+
+#notif-help {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--card);
+  border: 1px solid var(--line);
+}
+
+#notif-help.blocked {
+  background: rgba(251, 191, 36, 0.08);
+  border-color: rgba(251, 191, 36, 0.35);
+}
+
+#notif-help h5 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+#notif-help.blocked h5 { color: #FBBF24; }
+
+#notif-help ol, #notif-help ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+#notif-help li {
+  font-size: 12.5px;
+  color: var(--dim);
+  line-height: 1.55;
+  margin-bottom: 4px;
+}
+
+#notif-help li:last-child { margin-bottom: 0; }
+#notif-help li b { color: var(--text); font-weight: 700; }
+
+#notif-help p {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--dim);
+  line-height: 1.5;
+}
+
+#notif-actions:empty { display: none; }
+#notif-actions { margin-top: 10px; }

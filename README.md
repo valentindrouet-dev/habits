@@ -56,7 +56,7 @@ L'app est servie par un *service worker* en « réseau d'abord » pour son code
 (HTML/CSS/JS) : **au lancement suivant un déploiement, la nouvelle version est
 chargée automatiquement**. Le cache ne sert que de secours hors-ligne.
 
-La version installée s'affiche en petit **à droite du titre** (`v0.06`), et dans
+La version installée s'affiche en petit **à droite du titre** (`v0.07`), et dans
 Réglages → **Version**, avec un bouton pour forcer une vérification. Si une nouvelle
 version arrive pendant que l'app est ouverte, un bandeau « Nouvelle version
 disponible » apparaît.
@@ -84,7 +84,27 @@ mises à jour, contrairement à un lien de prévisualisation.
 
 ## Rappel quotidien : ce qu'il faut savoir
 
-Le rappel utilise les notifications web, qui n'ont pas les mêmes garanties qu'une app native :
+### Prérequis : l'app doit être installée
+
+**Sur iPhone/iPad**, Apple ne permet les notifications web **que** pour les apps ajoutées
+à l'écran d'accueil (iOS 16.4+) : depuis un simple onglet Safari, c'est impossible.
+Sur Android, elles fonctionnent dans Chrome, mais l'app installée est nécessaire pour
+un rappel quand l'app est fermée.
+
+Les Réglages diagnostiquent la situation réelle et affichent la marche à suivre :
+page dans un cadre (aperçu), app iOS non installée, autorisation refusée, ou tout bon.
+Un bouton **Envoyer une notification test** permet de vérifier immédiatement.
+
+### Autorisation refusée : comment la rétablir
+
+- **iPhone** : Réglages iOS → Notifications → *Habits* → autoriser. Si l'app n'y figure
+  pas, supprimez son icône, réinstallez-la depuis Safari, puis réactivez le rappel
+  (les données sont conservées : elles appartiennent au site, pas à l'icône).
+- **Android** : appui long sur l'icône → Infos sur l'appli → Notifications ; ou
+  Chrome → ⋮ → Paramètres → Paramètres des sites → Notifications.
+- **Ordinateur** : icône à gauche de la barre d'adresse → Notifications → Autoriser.
+
+### Fiabilité
 
 - **Android (installée sur l'écran d'accueil)** : le rappel s'affiche même app fermée,
   tant que le système n'a pas mis l'app en veille profonde.

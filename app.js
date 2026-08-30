@@ -12,7 +12,7 @@
    ============================================================ */
 
 const STORE_KEY = 'habits.v1';
-const APP_VERSION = '0.06';
+const APP_VERSION = '0.07';
 const WEEKS_TILE = 7;
 const WEEKS_WIDE = 26;
 
@@ -470,6 +470,8 @@ const els = {
   importFile: $('#import-file'),
   updateBar: $('#update-bar'),
   versionBadge: $('#version-badge'),
+  notifHelp: $('#notif-help'),
+  notifActions: $('#notif-actions'),
   settingsBtn: $('#settings-btn'),
   writeWarning: $('#write-warning'),
   writeWarningText: $('#write-warning-text'),
@@ -1454,12 +1456,142 @@ function syncSettings() {
       : 'Ouverte depuis le navigateur';
   }
 
+  const diag = notifDiagnosis();
+  els.notifStatus.textContent = diag.short;
+  els.reminderToggle.disabled = !diag.canEnable;
+  els.reminderToggle.style.opacity = diag.canEnable ? '' : '0.4';
+
+  els.notifHelp.className = diag.blocked ? 'blocked' : '';
+  els.notifHelp.innerHTML = diag.help;
+
+  els.notifActions.innerHTML = (diag.state === 'granted')
+    ? '<button id="notif-test" class="btn-ghost">Envoyer une notification test</button>'
+    : '';
+}
+
+/* Où tourne-t-on exactement ? Les notifications dépendent autant du contexte
+   (cadre imbriqué, app installée ou simple onglet) que d'un réglage. */
+function envInfo() {
+  let inFrame = false;
+  try { inFrame = window.self !== window.top; } catch (e) { inFrame = true; }
+  const ua = navigator.userAgent || '';
+  const isIOS = /iP(hone|ad|od)/.test(ua) || (/Mac/.test(ua) && navigator.maxTouchPoints > 1);
+  const isAndroid = /Android/.test(ua);
+  const standalone =
+    (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+    navigator.standalone === true;
+  return { inFrame, isIOS, isAndroid, standalone };
+}
+
+function notifDiagnosis() {
+  const env = envInfo();
+  const r = state.settings.reminder;
   const supported = 'Notification' in window;
   const perm = supported ? Notification.permission : 'unsupported';
-  if (!supported) els.notifStatus.textContent = 'Non pris en charge par ce navigateur';
-  else if (perm === 'denied') els.notifStatus.textContent = 'Notifications bloquées dans les réglages du navigateur';
-  else if (r.enabled) els.notifStatus.textContent = 'Actif tous les jours à ' + r.time;
-  else els.notifStatus.textContent = 'Désactivé';
+
+  /* 1. Page affichée dans un cadre (aperçu) : le blocage vient du cadre,
+        pas des réglages du téléphone. */
+  if (env.inFrame) {
+    return {
+      state: 'iframe', blocked: true, canEnable: false,
+      short: 'Impossible depuis un aperçu',
+      help:
+        '<h5>Ouvrez l\'app dans son propre onglet</h5>' +
+        '<p>Cette page est affichée dans un cadre (aperçu), qui interdit les notifications. ' +
+        'Ouvrez l\'adresse de l\'app directement dans le navigateur, puis ajoutez-la à ' +
+        'l\'écran d\'accueil : le rappel deviendra disponible.</p>',
+    };
+  }
+
+  /* 2. iPhone / iPad : les notifications web n'existent QUE pour une app
+        ajoutée à l'écran d'accueil (iOS 16.4+). */
+  if (env.isIOS && !env.standalone) {
+    return {
+      state: 'ios-not-installed', blocked: true, canEnable: false,
+      short: 'Ajoutez l\'app à l\'écran d\'accueil',
+      help:
+        '<h5>Sur iPhone, il faut installer l\'app d\'abord</h5>' +
+        '<ol>' +
+          '<li>Dans <b>Safari</b>, appuyez sur le bouton <b>Partager</b> (carré avec une flèche)</li>' +
+          '<li>Choisissez <b>Sur l\'écran d\'accueil</b>, puis <b>Ajouter</b></li>' +
+          '<li>Ouvrez l\'app depuis <b>son icône</b> (plus depuis Safari)</li>' +
+          '<li>Revenez ici et activez le rappel : iOS demandera l\'autorisation</li>' +
+        '</ol>' +
+        '<p>Apple ne permet les notifications web que pour les apps installées, ' +
+        'jamais depuis un onglet Safari.</p>',
+    };
+  }
+
+  if (!supported) {
+    return {
+      state: 'unsupported', blocked: true, canEnable: false,
+      short: 'Non pris en charge par ce navigateur',
+      help: '<p>Ce navigateur ne gère pas les notifications web. Essayez Chrome (Android) ' +
+            'ou Safari avec l\'app installée sur l\'écran d\'accueil (iPhone).</p>',
+    };
+  }
+
+  /* 3. Refus explicite : il faut le lever dans les réglages du système. */
+  if (perm === 'denied') {
+    let steps;
+    if (env.isIOS) {
+      steps =
+        '<ol>' +
+          '<li>Ouvrez <b>Réglages</b> (iOS) → <b>Notifications</b></li>' +
+          '<li>Trouvez <b>Habits</b> dans la liste et autorisez-les</li>' +
+          '<li>Si l\'app n\'y figure pas : supprimez son icône de l\'écran d\'accueil, ' +
+              'réinstallez-la depuis Safari, puis réactivez le rappel ici ' +
+              '<i>(vos données sont conservées)</i></li>' +
+        '</ol>';
+    } else if (env.isAndroid) {
+      steps =
+        '<ol>' +
+          '<li>Appui long sur l\'icône de l\'app → <b>Infos sur l\'appli</b> → ' +
+              '<b>Notifications</b> → autorisez</li>' +
+          '<li>Ou dans <b>Chrome</b> : ⋮ → <b>Paramètres</b> → <b>Paramètres des sites</b> → ' +
+              '<b>Notifications</b> → retrouvez le site et passez-le sur <b>Autoriser</b></li>' +
+        '</ol>';
+    } else {
+      steps =
+        '<ol>' +
+          '<li><b>Chrome / Edge</b> : cliquez sur l\'icône à gauche de l\'adresse → ' +
+              '<b>Notifications</b> → <b>Autoriser</b>, puis rechargez</li>' +
+          '<li><b>Safari</b> : <b>Safari</b> → <b>Réglages</b> → <b>Sites web</b> → ' +
+              '<b>Notifications</b> → passez ce site sur <b>Autoriser</b></li>' +
+          '<li><b>Firefox</b> : cliquez sur le cadenas → supprimez le blocage des notifications</li>' +
+        '</ol>';
+    }
+    return {
+      state: 'denied', blocked: true, canEnable: false,
+      short: 'Autorisation refusée',
+      help: '<h5>Réautoriser les notifications</h5>' + steps +
+            '<p>Une fois autorisé, revenez ici et activez le rappel.</p>',
+    };
+  }
+
+  /* 4. Tout est possible : reste à décrire la fiabilité réelle. */
+  const reliability = env.isIOS
+    ? '<p>Sur iPhone, iOS ne garantit pas le réveil à heure fixe : le rappel arrive ' +
+      'de façon fiable à l\'ouverture de l\'app, et souvent à l\'heure prévue.</p>'
+    : (env.standalone
+        ? '<p>App installée : le rappel s\'affiche même app fermée, tant que le système ' +
+          'ne la met pas en veille profonde.</p>'
+        : '<p>Pour un rappel même app fermée, installez-la sur l\'écran d\'accueil ' +
+          '(menu ⋮ → <b>Installer l\'application</b>). Sinon il ne sonne que si l\'app est ouverte.</p>');
+
+  if (perm === 'granted') {
+    return {
+      state: 'granted', blocked: false, canEnable: true,
+      short: r.enabled ? 'Actif tous les jours à ' + r.time : 'Autorisé, mais désactivé',
+      help: reliability,
+    };
+  }
+
+  return {
+    state: 'default', blocked: false, canEnable: true,
+    short: 'Désactivé',
+    help: '<p>Activez l\'interrupteur : le navigateur demandera l\'autorisation.</p>' + reliability,
+  };
 }
 
 /* ---------- Sécurité des données : affichage et actions ---------- */
@@ -1638,6 +1770,8 @@ async function toggleReminder() {
   save();
   scheduleReminder();
   syncSettings();
+  /* confirmation immédiate : on voit tout de suite que ça fonctionne */
+  showNotification('Rappel activé ✓ — vous serez prévenu chaque jour à ' + r.time + '.');
 }
 
 /* ---------- Réorganisation par glisser-déposer ---------- */
@@ -2057,6 +2191,12 @@ els.reminderTime.addEventListener('change', () => {
   save();
   scheduleReminder();
   syncSettings();
+});
+
+els.notifActions.addEventListener('click', e => {
+  if (!e.target.closest('#notif-test')) return;
+  showNotification('Test réussi ✓ — voici à quoi ressemblera votre rappel quotidien.');
+  flash(els.dataInfo, '✓ Notification envoyée');
 });
 
 els.persistBtn.addEventListener('click', async () => {
