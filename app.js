@@ -12,14 +12,14 @@
    ============================================================ */
 
 const STORE_KEY = 'habits.v1';
-const APP_VERSION = '0.04';
+const APP_VERSION = '0.05';
 const WEEKS_TILE = 7;
 const WEEKS_WIDE = 26;
 
 /* Zoom : compact / normal / large. Une tuile plus large montre plus d'historique. */
 const ZOOM_LEVELS = 3;
 const ZOOM_WEEKS = {
-  grid: [5, 7, 13],
+  grid: [5, 7, 10],
   list: [34, 26, 17],
 };
 const ZOOM_DOTS = [7, 7, 14];
@@ -41,6 +41,7 @@ const EMOJIS = [
 ];
 
 const DAY_LETTERS = ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'];
+const DAY_INITIALS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
 const DOW_SIDE = ['', 'Mar', '', 'Jeu', '', 'Sam', ''];
 const MONTH_LETTERS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
 const MONTH_CAP = ['Jan', 'Févr.', 'Mars', 'Avr.', 'Mai', 'Juin', 'Juil.', 'Août', 'Sept.', 'Oct.', 'Nov.', 'Déc.'];
@@ -427,6 +428,7 @@ function tileHtml(h, selKey, sub, weeks) {
           '<p>' + sub + '</p>' +
         '</div>' +
       '</div>' +
+      '<div class="dow-head">' + DAY_INITIALS.map(l => '<span>' + l + '</span>').join('') + '</div>' +
       '<div class="mini-grid" style="--weeks:' + weeks + '">' +
         weeksGridHtml(h, weeks, 'c', selKey) +
       '</div>' +

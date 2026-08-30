@@ -15,7 +15,10 @@ stockées sur votre appareil (aucun serveur, aucun compte).
 - 🔲 **3 modes d'affichage** (sélecteur flottant en bas) : grille de tuiles, liste de contrôle, grandes cartes
 - 🔍 **3 tailles par mode** (compact / normal / large) : appuyez sur l'icône de la vue active,
   ou pincez l'écran. Chaque vue garde sa propre taille
-- 🟩 Grilles de progression teintées à la couleur de l'habitude (façon GitHub)
+- 🗓️ Mini-grille **en lecture calendrier** sur chaque tuile : 7 colonnes (lundi → dimanche),
+  une ligne par semaine ; en taille Large, l'en-tête L M M J V S D est affiché.
+  Une colonne = toujours le même jour de la semaine, ce qui rend les motifs visibles
+- 🟩 Grilles de progression teintées à la couleur de l'habitude
 - 🔥 Séries en cours et records (jours d'affilée)
 - 📊 Statistiques **par mois** : réalisations, taux de réussite, calendrier de chaleur, détail par habitude
 - 📈 Statistiques **par année** : grande grille de l'année, courbe « Réalisations / Mois », détail par habitude
@@ -53,7 +56,7 @@ L'app est servie par un *service worker* en « réseau d'abord » pour son code
 (HTML/CSS/JS) : **au lancement suivant un déploiement, la nouvelle version est
 chargée automatiquement**. Le cache ne sert que de secours hors-ligne.
 
-La version installée s'affiche en petit **à droite du titre** (`v0.04`), et dans
+La version installée s'affiche en petit **à droite du titre** (`v0.05`), et dans
 Réglages → **Version**, avec un bouton pour forcer une vérification. Si une nouvelle
 version arrive pendant que l'app est ouverte, un bandeau « Nouvelle version
 disponible » apparaît.
