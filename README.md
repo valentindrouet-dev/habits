@@ -64,8 +64,9 @@ installée et permet de forcer une vérification.
 
 ## Déploiement
 
-`.github/workflows/pages.yml` publie le dépôt sur **GitHub Pages** à chaque push
-sur la branche par défaut. L'URL est stable :
+**GitHub Pages** est configuré en « Deploy from a branch » : chaque push sur la
+branche par défaut republie le site automatiquement, sans workflow à maintenir.
+L'URL est stable :
 
 ```
 https://valentindrouet-dev.github.io/habits/
@@ -73,9 +74,6 @@ https://valentindrouet-dev.github.io/habits/
 
 C'est cette URL qu'il faut ajouter à l'écran d'accueil : elle reçoit toutes les
 mises à jour, contrairement à un lien de prévisualisation.
-
-Si le premier déploiement échoue, vérifiez dans *Settings → Pages* que la source
-est bien « GitHub Actions » (le workflow tente de l'activer automatiquement).
 
 ## Rappel quotidien : ce qu'il faut savoir
 
