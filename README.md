@@ -9,14 +9,16 @@ stockées sur votre appareil (aucun serveur, aucun compte).
 
 ## Fonctionnalités
 
-- ✅ Cocher chaque jour les habitudes accomplies (bouton sur chaque carte)
-- 🎨 Autant d'habitudes que vous voulez, chacune avec son **emoji** et sa **couleur**
-- 🟩 Grille de progression sur 6 mois sur chaque carte (façon GitHub)
+- ✅ Cocher chaque jour les habitudes accomplies (bouton sur chaque tuile)
+- 🎨 Autant d'habitudes que vous voulez, chacune avec son **emoji**, sa **couleur** et une description
+- 🏷️ **Catégories** (avec emoji) pour filtrer les habitudes, + bouton « Fait » pour masquer ce qui est déjà coché
+- 🔲 **3 modes d'affichage** (sélecteur flottant en bas) : grille de tuiles, liste de contrôle, grandes cartes
+- 🟩 Grilles de progression teintées à la couleur de l'habitude (façon GitHub)
 - 🔥 Séries en cours et records (jours d'affilée)
-- 📊 Statistiques **par mois** : taux de réussite, calendrier de chaleur, jours parfaits, détail par habitude
-- 📈 Statistiques **par année** : réussite mois par mois, totaux, détail par habitude
-- 📅 Vue détaillée par habitude : grille de l'année complète, navigation entre les années
-- ✏️ Modifier / supprimer une habitude à tout moment
+- 📊 Statistiques **par mois** : réalisations, taux de réussite, calendrier de chaleur, détail par habitude
+- 📈 Statistiques **par année** : grande grille de l'année, courbe « Réalisations / Mois », détail par habitude
+- 📅 Fiche par habitude : grille des 6 derniers mois + **calendrier interactif** pour cocher / corriger un jour passé
+- ✏️ Modifier / supprimer habitudes et catégories à tout moment
 
 ## Lancer en local
 
@@ -56,16 +58,19 @@ Stockées dans le `localStorage` du navigateur, clé `habits.v1` :
 
 ```json
 {
-  "habits": [{ "id": "…", "name": "Sport", "emoji": "💪", "color": "#4ADE80", "createdAt": "2026-08-30" }],
-  "checks": { "idHabitude": { "2026-08-30": 1 } }
+  "habits": [{ "id": "…", "name": "Sport", "emoji": "💪", "color": "#4ADE80",
+               "createdAt": "2026-08-30", "categoryId": null, "description": "" }],
+  "checks": { "idHabitude": { "2026-08-30": 1 } },
+  "categories": [{ "id": "…", "name": "Forme", "emoji": "🚴" }],
+  "settings": { "viewMode": "grid", "showDone": true }
 }
 ```
 
 ## Pistes d'amélioration
 
 - Export / import des données (sauvegarde JSON)
-- Cocher un jour passé (correction d'oubli)
 - Rappels / notifications
-- Habitudes « X fois par semaine » plutôt que quotidiennes
+- Objectifs « X fois par semaine » plutôt que quotidiens
 - Réordonner les habitudes par glisser-déposer
+- Archiver une habitude sans perdre son historique
 - Version native (Capacitor / React Native) si besoin des stores

@@ -1,6 +1,6 @@
 /* Service worker : cache-first pour que l'app fonctionne hors-ligne.
    Incrémenter CACHE quand les fichiers changent. */
-const CACHE = 'habits-v1';
+const CACHE = 'habits-v2';
 const ASSETS = [
   './',
   './index.html',

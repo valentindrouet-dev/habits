@@ -2,12 +2,18 @@
 
 /* ============================================================
    Mes Habitudes — logique de l'application
-   Données stockées en localStorage sous la clé "habits.v1" :
-   { habits: [{id, name, emoji, color, createdAt}], checks: {id: {"YYYY-MM-DD": 1}} }
+   Données en localStorage sous la clé "habits.v1" :
+   {
+     habits:    [{id, name, emoji, color, createdAt, categoryId, description}],
+     checks:    {habitId: {"YYYY-MM-DD": 1}},
+     categories:[{id, name, emoji}],
+     settings:  {viewMode: 'grid'|'check'|'list', showDone: bool}
+   }
    ============================================================ */
 
 const STORE_KEY = 'habits.v1';
-const WEEKS_ON_CARD = 26;
+const WEEKS_TILE = 7;
+const WEEKS_WIDE = 26;
 
 const PALETTE = [
   '#FF6B6B', '#FF9F43', '#FFD166', '#A3E635', '#4ADE80', '#2DD4BF',
@@ -20,12 +26,14 @@ const EMOJIS = [
   '💧', '🥗', '🍎', '🥦', '🚭', '😴', '🦷', '🚿',
   '🧹', '🍳', '🌱', '🐕', '💊', '☀️', '🌙', '📵',
   '💼', '📝', '📈', '💰', '✉️', '📅', '🎯', '⏰',
-  '🙏', '❤️', '😊', '📞', '🎮', '🎬', '✈️', '⭐',
+  '🎬', '📺', '🎮', '🕹️', '♟️', '🎲', '🎧', '📸',
+  '🙏', '❤️', '😊', '📞', '👥', '🍻', '✈️', '⭐',
 ];
 
-const DAY_LETTERS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+const DAY_LETTERS = ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'];
+const DOW_SIDE = ['', 'Mar', '', 'Jeu', '', 'Sam', ''];
 const MONTH_LETTERS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
-const MONTH_SHORT = ['jan', 'fév', 'mar', 'avr', 'mai', 'juin', 'juil', 'août', 'sep', 'oct', 'nov', 'déc'];
+const MONTH_CAP = ['Jan', 'Févr.', 'Mars', 'Avr.', 'Mai', 'Juin', 'Juil.', 'Août', 'Sept.', 'Oct.', 'Nov.', 'Déc.'];
 
 const ICON = {
   check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>',
@@ -35,6 +43,11 @@ const ICON = {
   close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
   pencil: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1.2-4.2L16.5 4.5a2.12 2.12 0 0 1 3 3L8.2 18.8 4 20z"/><path d="M14.5 6.5l3 3"/></svg>',
   trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6.5 7l1 14h9l1-14"/><path d="M10 11v6M14 11v6"/></svg>',
+  hash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 3.5 8 20.5M16 3.5l-2 17M4 9h17M3 15h17"/></svg>',
+  percent: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 5 5 19"/><circle cx="6.8" cy="6.8" r="2.6"/><circle cx="17.2" cy="17.2" r="2.6"/></svg>',
+  drop: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3.5s6 6.3 6 10.3a6 6 0 0 1-12 0c0-4 6-10.3 6-10.3z"/></svg>',
+  trend: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l5-5 4 3 7-8"/><path d="M14.5 7H20v5.5"/></svg>',
+  calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="6" width="16" height="14" rx="4"/><path d="M4 11h16M9 3.5V7M15 3.5V7"/></svg>',
 };
 
 /* ---------- Dates (toujours en heure locale) ---------- */
@@ -85,15 +98,30 @@ function fmtMonthYear(d) {
 
 /* ---------- Stockage ---------- */
 
+function normalize(s) {
+  const out = {
+    habits: Array.isArray(s.habits) ? s.habits : [],
+    checks: (s.checks && typeof s.checks === 'object') ? s.checks : {},
+    categories: Array.isArray(s.categories) ? s.categories : [],
+    settings: Object.assign({ viewMode: 'grid', showDone: true }, s.settings || {}),
+  };
+  for (const h of out.habits) {
+    if (h.categoryId === undefined) h.categoryId = null;
+    if (typeof h.description !== 'string') h.description = '';
+  }
+  if (!['grid', 'check', 'list'].includes(out.settings.viewMode)) out.settings.viewMode = 'grid';
+  return out;
+}
+
 function load() {
   try {
     const raw = localStorage.getItem(STORE_KEY);
     if (raw) {
       const s = JSON.parse(raw);
-      if (s && Array.isArray(s.habits) && s.checks && typeof s.checks === 'object') return s;
+      if (s && typeof s === 'object') return normalize(s);
     }
   } catch (e) { /* stockage indisponible ou corrompu : on repart de zéro */ }
-  return { habits: [], checks: {} };
+  return normalize({});
 }
 
 function save() {
@@ -165,29 +193,13 @@ function eligibleDays(h, fromKey, toKey) {
   return daysBetween(parseKey(lo), parseKey(hi)) + 1;
 }
 
-function periodStats(fromKey, toKey) {
+function periodStats(habits, fromKey, toKey) {
   let done = 0, eligible = 0;
-  for (const h of state.habits) {
+  for (const h of habits) {
     done += countRange(h.id, fromKey, toKey);
     eligible += eligibleDays(h, fromKey, toKey);
   }
   return { done, eligible, rate: eligible ? done / eligible : 0 };
-}
-
-function perfectDays(fromKey, toKey) {
-  const t = keyOf(todayDate());
-  const hi = toKey < t ? toKey : t;
-  if (fromKey > hi) return 0;
-  let count = 0;
-  let d = parseKey(fromKey);
-  const end = parseKey(hi);
-  while (d <= end) {
-    const k = keyOf(d);
-    const existing = state.habits.filter(h => h.createdAt <= k);
-    if (existing.length && existing.every(h => isChecked(h.id, k))) count++;
-    d = addDays(d, 1);
-  }
-  return count;
 }
 
 /* ---------- État de l'interface ---------- */
@@ -195,15 +207,20 @@ function perfectDays(fromKey, toKey) {
 const now = todayDate();
 const ui = {
   tab: 'home',
+  catFilter: null,
   statsMode: 'month',
   statsMonth: new Date(now.getFullYear(), now.getMonth(), 1),
   statsYear: now.getFullYear(),
   detailId: null,
-  detailYear: now.getFullYear(),
+  detailMonth: new Date(now.getFullYear(), now.getMonth(), 1),
   editId: null,
   editEmoji: '⭐',
   editColor: PALETTE[4],
-  openSheet: null,
+  editCat: null,
+  catEditId: null,
+  catEmoji: '🏷️',
+  catFromEdit: false,
+  sheetStack: [],
   lastRenderDay: keyOf(now),
 };
 
@@ -218,17 +235,29 @@ const els = {
   ringLabel: $('#ring-label'),
   home: $('#view-home'),
   stats: $('#view-stats'),
+  pill: $('#view-pill'),
   backdrop: $('#backdrop'),
   sheetEdit: $('#sheet-edit'),
+  sheetCat: $('#sheet-cat'),
   sheetDetail: $('#sheet-detail'),
   detailBody: $('#detail-body'),
   editTitle: $('#edit-title'),
   editChip: $('#edit-chip'),
   editName: $('#edit-name'),
+  editDesc: $('#edit-desc'),
+  editCatRow: $('#edit-cat-row'),
   emojiGrid: $('#emoji-grid'),
   colorGrid: $('#color-grid'),
   editSave: $('#edit-save'),
+  catTitle: $('#cat-title'),
+  catChip: $('#cat-chip'),
+  catName: $('#cat-name'),
+  catEmojiGrid: $('#cat-emoji-grid'),
+  catSave: $('#cat-save'),
+  catList: $('#cat-list'),
 };
+
+const SHEETS = { edit: 'sheetEdit', cat: 'sheetCat', detail: 'sheetDetail' };
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => (
@@ -239,6 +268,23 @@ function escapeHtml(s) {
 function hexAlpha(hex, a) {
   const n = Math.round(a * 255).toString(16).padStart(2, '0');
   return hex + n;
+}
+
+/* Habitudes visibles selon les filtres */
+
+function catHabits() {
+  return ui.catFilter === null
+    ? state.habits
+    : state.habits.filter(h => h.categoryId === ui.catFilter);
+}
+
+function visibleHabits() {
+  let list = catHabits();
+  if (!state.settings.showDone) {
+    const tKey = keyOf(todayDate());
+    list = list.filter(h => !isChecked(h.id, tKey));
+  }
+  return list;
 }
 
 /* ---------- Rendu : en-tête ---------- */
@@ -254,9 +300,8 @@ function renderHeader() {
       : fmtLongDate(t);
     els.ring.hidden = total === 0;
     if (total > 0) {
-      const f = done / total;
       const C = 125.66;
-      els.ringBar.style.strokeDashoffset = String(C * (1 - f));
+      els.ringBar.style.strokeDashoffset = String(C * (1 - done / total));
       els.ringLabel.textContent = done + '/' + total;
       els.ring.classList.toggle('complete', done === total);
     }
@@ -267,25 +312,64 @@ function renderHeader() {
   }
 }
 
-/* ---------- Rendu : accueil ---------- */
+/* ---------- Rangée de catégories ---------- */
 
-function cardGridHtml(h) {
+function chipsHtml(opts) {
+  const withExtras = !!(opts && opts.home);
+  let chips =
+    '<button class="fchip' + (ui.catFilter === null ? ' active' : '') + '" data-chip="">Toutes</button>' +
+    state.categories.map(c =>
+      '<button class="fchip' + (ui.catFilter === c.id ? ' active' : '') + '" data-chip="' + c.id + '">' +
+        '<span class="e">' + c.emoji + '</span>' + escapeHtml(c.name) +
+      '</button>'
+    ).join('');
+  if (withExtras) {
+    chips += '<button class="fchip add-cat" data-add-cat aria-label="Nouvelle catégorie">' + ICON.plus + '</button>';
+  }
+  return (
+    '<div class="chips-row">' +
+      '<div class="chips-scroll">' + chips + '</div>' +
+      (withExtras
+        ? '<button class="fchip done-toggle' + (state.settings.showDone ? ' active' : '') + '" data-done-toggle>Fait</button>'
+        : '') +
+    '</div>'
+  );
+}
+
+/* ---------- Cellules de grilles ---------- */
+
+function cellHtml(h, k, tKey, cls) {
+  let bg;
+  if (k > tKey) bg = hexAlpha(h.color, 0.05);
+  else if (isChecked(h.id, k)) bg = h.color;
+  else bg = hexAlpha(h.color, 0.13);
+  const today = k === tKey ? ' today' : '';
+  return '<i class="' + cls + today + '" style="background:' + bg + '"></i>';
+}
+
+function weeksGridHtml(h, weeks, cls) {
   const t = todayDate();
   const tKey = keyOf(t);
-  const start = addDays(mondayOf(t), -(WEEKS_ON_CARD - 1) * 7);
+  const start = addDays(mondayOf(t), -(weeks - 1) * 7);
   let html = '';
-  for (let w = 0; w < WEEKS_ON_CARD; w++) {
+  for (let w = 0; w < weeks; w++) {
     for (let r = 0; r < 7; r++) {
-      const d = addDays(start, w * 7 + r);
-      const k = keyOf(d);
-      if (k > tKey) { html += '<i class="c off"></i>'; continue; }
-      const cls = ['c'];
-      if (isChecked(h.id, k)) cls.push('on');
-      if (k === tKey) cls.push('today');
-      html += '<i class="' + cls.join(' ') + '"></i>';
+      html += cellHtml(h, keyOf(addDays(start, w * 7 + r)), tKey, cls);
     }
   }
   return html;
+}
+
+/* ---------- Rendu : accueil ---------- */
+
+function checkBtnHtml(h, done, cls) {
+  return (
+    '<button class="' + cls + (done ? ' done' : '') + '" data-check="' + h.id + '"' +
+    ' style="background:' + (done ? h.color : hexAlpha(h.color, 0.15)) + '"' +
+    ' aria-label="Cocher ' + escapeHtml(h.name) + '">' +
+    (done ? h.emoji : ICON.check) +
+    '</button>'
+  );
 }
 
 function habitSubline(h) {
@@ -296,44 +380,160 @@ function habitSubline(h) {
   return 'Commencez aujourd\'hui !';
 }
 
+function tileHtml(h, tKey, monthLabel) {
+  return (
+    '<article class="tile" data-card="' + h.id + '">' +
+      '<div class="tile-top">' +
+        checkBtnHtml(h, isChecked(h.id, tKey), 'tile-check') +
+        '<div class="tile-info">' +
+          '<h3>' + escapeHtml(h.name) + '</h3>' +
+          '<p>' + monthLabel + '</p>' +
+        '</div>' +
+      '</div>' +
+      '<div class="mini-grid">' + weeksGridHtml(h, WEEKS_TILE, 'c') + '</div>' +
+    '</article>'
+  );
+}
+
+function checkRowHtml(h, tKey) {
+  const t = todayDate();
+  let dots = '';
+  for (let i = 6; i >= 0; i--) {
+    const k = keyOf(addDays(t, -i));
+    dots += '<i style="background:' + (isChecked(h.id, k) ? h.color : hexAlpha(h.color, 0.15)) + '"></i>';
+  }
+  return (
+    '<article class="crow" data-card="' + h.id + '">' +
+      checkBtnHtml(h, isChecked(h.id, tKey), 'tile-check') +
+      '<div class="crow-info">' +
+        '<h3>' + escapeHtml(h.name) + '</h3>' +
+        '<p>' + habitSubline(h) + '</p>' +
+      '</div>' +
+      '<div class="week-dots">' + dots + '</div>' +
+    '</article>'
+  );
+}
+
+function cardHtml(h, tKey) {
+  return (
+    '<article class="card" data-card="' + h.id + '">' +
+      '<div class="card-top">' +
+        '<div class="chip" style="background:' + hexAlpha(h.color, 0.16) + '">' + h.emoji + '</div>' +
+        '<div class="card-info">' +
+          '<h3>' + escapeHtml(h.name) + '</h3>' +
+          '<p>' + habitSubline(h) + '</p>' +
+        '</div>' +
+        checkBtnHtml(h, isChecked(h.id, tKey), 'check') +
+      '</div>' +
+      '<div class="grid26">' + weeksGridHtml(h, WEEKS_WIDE, 'c') + '</div>' +
+    '</article>'
+  );
+}
+
 function renderHome(animateId) {
+  const tKey = keyOf(todayDate());
+
   if (!state.habits.length) {
     els.home.innerHTML =
       '<div class="empty fade-in">' +
         '<div class="empty-icon">🌱</div>' +
         '<h3>Aucune habitude pour l\'instant</h3>' +
-        '<p>Appuyez sur le bouton + pour créer votre première habitude.</p>' +
+        '<p>Appuyez sur le bouton + en haut pour créer votre première habitude.</p>' +
       '</div>';
+    syncPill();
     return;
   }
-  const tKey = keyOf(todayDate());
-  els.home.innerHTML = state.habits.map(h => {
-    const done = isChecked(h.id, tKey);
-    return (
-      '<article class="card" data-card="' + h.id + '">' +
-        '<div class="card-top">' +
-          '<div class="chip" style="background:' + hexAlpha(h.color, 0.16) + '">' + h.emoji + '</div>' +
-          '<div class="card-info">' +
-            '<h3>' + escapeHtml(h.name) + '</h3>' +
-            '<p>' + habitSubline(h) + '</p>' +
-          '</div>' +
-          '<button class="check' + (done ? ' done' : '') + '" data-check="' + h.id + '" style="--c:' + h.color + '" aria-label="Cocher ' + escapeHtml(h.name) + '">' +
-            (done ? ICON.check : ICON.plus) +
-          '</button>' +
-        '</div>' +
-        '<div class="grid26" style="--c:' + h.color + '">' + cardGridHtml(h) + '</div>' +
-      '</article>'
-    );
-  }).join('');
+
+  const list = visibleHabits();
+  let content;
+  if (!list.length) {
+    content =
+      '<div class="empty small">' +
+        '<div class="empty-icon">' + (state.settings.showDone ? '🗂️' : '🎉') + '</div>' +
+        '<h3>' + (state.settings.showDone ? 'Rien dans cette catégorie' : 'Tout est fait ici !') + '</h3>' +
+        '<p>' + (state.settings.showDone
+          ? 'Ajoutez une habitude ou choisissez une autre catégorie.'
+          : 'Les habitudes cochées sont masquées. Réactivez « Fait » pour les voir.') + '</p>' +
+      '</div>';
+  } else {
+    const mode = state.settings.viewMode;
+    if (mode === 'grid') {
+      const monthLabel = todayDate().toLocaleDateString('fr-FR', { month: 'long' });
+      content = '<div class="tile-grid">' + list.map(h => tileHtml(h, tKey, monthLabel)).join('') + '</div>';
+    } else if (mode === 'check') {
+      content = '<div class="check-list">' + list.map(h => checkRowHtml(h, tKey)).join('') + '</div>';
+    } else {
+      content = list.map(h => cardHtml(h, tKey)).join('');
+    }
+  }
+
+  els.home.innerHTML = chipsHtml({ home: true }) + content;
+  syncPill();
+
   if (animateId) {
     const btn = els.home.querySelector('[data-check="' + animateId + '"]');
     if (btn) btn.classList.add('pop');
   }
 }
 
+function syncPill() {
+  els.pill.hidden = ui.tab !== 'home' || !state.habits.length;
+  for (const b of els.pill.children) {
+    b.classList.toggle('active', b.dataset.view === state.settings.viewMode);
+  }
+}
+
 /* ---------- Rendu : statistiques ---------- */
 
-function monthHeatHtml(y, m) {
+function statPairHtml(a, b) {
+  return (
+    '<div class="stat-tiles">' +
+      '<div class="stat-tile"><div class="badge">' + a.icon + '</div><b>' + a.value + '</b><span>' + a.label + '</span></div>' +
+      '<div class="stat-tile"><div class="badge">' + b.icon + '</div><b>' + b.value + '</b><span>' + b.label + '</span></div>' +
+    '</div>'
+  );
+}
+
+function yearHeatHtml(habits, y) {
+  const t = todayDate();
+  const tKey = keyOf(t);
+  const start = mondayOf(new Date(y, 0, 1));
+  const end = new Date(y, 11, 31);
+  const weeks = Math.ceil((daysBetween(start, end) + 1) / 7);
+  let labels = '';
+  for (let m = 0; m < 12; m++) {
+    const col = Math.floor(daysBetween(start, new Date(y, m, 1)) / 7);
+    labels += '<span style="left:' + (col * 14) + 'px">' + MONTH_CAP[m] + '</span>';
+  }
+  let cells = '';
+  for (let w = 0; w < weeks; w++) {
+    for (let r = 0; r < 7; r++) {
+      const d = addDays(start, w * 7 + r);
+      const k = keyOf(d);
+      let bg = 'transparent';
+      if (d.getFullYear() === y) {
+        if (k > tKey) bg = 'rgba(255,255,255,0.025)';
+        else {
+          const existing = habits.filter(h => h.createdAt <= k);
+          const done = existing.filter(h => isChecked(h.id, k)).length;
+          const f = existing.length ? done / existing.length : 0;
+          bg = f > 0 ? 'rgba(139,92,246,' + (0.14 + 0.72 * f).toFixed(2) + ')' : 'rgba(255,255,255,0.05)';
+        }
+      }
+      cells += '<i class="c' + (k === tKey ? ' today' : '') + '" style="background:' + bg + '"></i>';
+    }
+  }
+  return (
+    '<div class="stats-card">' +
+      '<div class="ygrid-wrap" id="ygrid-scroll">' +
+        '<div class="ylabels" style="width:' + (weeks * 14) + 'px">' + labels + '</div>' +
+        '<div class="ygrid">' + cells + '</div>' +
+      '</div>' +
+    '</div>'
+  );
+}
+
+function monthHeatHtml(habits, y, m) {
   const t = todayDate();
   const tKey = keyOf(t);
   const nDays = daysInMonth(y, m);
@@ -347,65 +547,49 @@ function monthHeatHtml(y, m) {
     if (k > tKey) {
       cls.push('future');
     } else {
-      const existing = state.habits.filter(h => h.createdAt <= k);
+      const existing = habits.filter(h => h.createdAt <= k);
       const done = existing.filter(h => isChecked(h.id, k)).length;
       const f = existing.length ? done / existing.length : 0;
       if (f > 0) {
         cls.push('lit');
-        style = ' style="background:rgba(124,108,246,' + (0.15 + 0.65 * f).toFixed(2) + ')"';
+        style = ' style="background:rgba(139,92,246,' + (0.16 + 0.62 * f).toFixed(2) + ')"';
       }
     }
     if (k === tKey) cls.push('today');
     cells += '<div class="' + cls.join(' ') + '"' + style + '>' + day + '</div>';
   }
   return (
-    '<div class="heat-head">' + DAY_LETTERS.map(l => '<span>' + l + '</span>').join('') + '</div>' +
-    '<div class="heat">' + cells + '</div>'
+    '<div class="stats-card">' +
+      '<div class="heat-head">' + DAY_LETTERS.map(l => '<span>' + l.replace('.', '') + '</span>').join('') + '</div>' +
+      '<div class="heat">' + cells + '</div>' +
+    '</div>'
   );
 }
 
-function yearBarsHtml(y) {
-  const t = todayDate();
-  let html = '';
-  for (let m = 0; m < 12; m++) {
-    const from = keyOf(new Date(y, m, 1));
-    const to = keyOf(new Date(y, m, daysInMonth(y, m)));
-    const st = periodStats(from, to);
-    const pct = Math.round(st.rate * 100);
-    const isNow = y === t.getFullYear() && m === t.getMonth();
-    html +=
-      '<div class="bar-col' + (isNow ? ' now' : '') + '" title="' + MONTH_SHORT[m] + ' : ' + pct + '%">' +
-        '<div class="bar-track"><div class="bar-fill' + (pct === 0 ? ' zero' : '') + '" style="height:' + Math.max(pct, 2) + '%"></div></div>' +
-        '<em>' + MONTH_LETTERS[m] + '</em>' +
-      '</div>';
-  }
-  return '<div class="bars">' + html + '</div>';
-}
-
-function habitRowsHtml(fromKey, toKey) {
-  return state.habits.map(h => {
-    const done = countRange(h.id, fromKey, toKey);
-    const elig = eligibleDays(h, fromKey, toKey);
-    const pct = elig ? Math.round((done / elig) * 100) : 0;
-    return (
-      '<div class="hstat" data-card="' + h.id + '">' +
-        '<div class="chip sm" style="background:' + hexAlpha(h.color, 0.16) + '">' + h.emoji + '</div>' +
-        '<div class="hstat-main">' +
-          '<div class="hstat-top">' +
-            '<span class="name">' + escapeHtml(h.name) + '</span>' +
-            '<span class="val">' + done + '/' + elig + ' · ' + pct + '%</span>' +
-          '</div>' +
-          '<div class="hbar"><i style="width:' + pct + '%;--c:' + h.color + ';background:' + h.color + '"></i></div>' +
-        '</div>' +
-      '</div>'
-    );
-  }).join('');
-}
-
-function bestStreakAll() {
-  let best = 0;
-  for (const h of state.habits) best = Math.max(best, bestStreak(h.id));
-  return best;
+function habitRowsHtml(habits, fromKey, toKey) {
+  if (!habits.length) return '';
+  return (
+    '<div class="stats-card">' +
+      '<div class="stats-card-title"><h3>Par habitude</h3></div>' +
+      habits.map(h => {
+        const done = countRange(h.id, fromKey, toKey);
+        const elig = eligibleDays(h, fromKey, toKey);
+        const pct = elig ? Math.round((done / elig) * 100) : 0;
+        return (
+          '<div class="hstat" data-card="' + h.id + '">' +
+            '<div class="chip sm" style="background:' + hexAlpha(h.color, 0.16) + '">' + h.emoji + '</div>' +
+            '<div class="hstat-main">' +
+              '<div class="hstat-top">' +
+                '<span class="name">' + escapeHtml(h.name) + '</span>' +
+                '<span class="val">' + done + '/' + elig + ' · ' + pct + '%</span>' +
+              '</div>' +
+              '<div class="hbar"><i style="width:' + pct + '%;background:' + h.color + '"></i></div>' +
+            '</div>' +
+          '</div>'
+        );
+      }).join('') +
+    '</div>'
+  );
 }
 
 function renderStats() {
@@ -420,6 +604,7 @@ function renderStats() {
   }
 
   const t = todayDate();
+  const habits = catHabits();
   const isMonth = ui.statsMode === 'month';
 
   let fromKey, toKey, label, canNext;
@@ -437,13 +622,24 @@ function renderStats() {
     canNext = ui.statsYear < t.getFullYear();
   }
 
-  const st = periodStats(fromKey, toKey);
-  const rate = Math.round(st.rate * 100);
-  const perfect = perfectDays(fromKey, toKey);
-  const record = bestStreakAll();
+  const st = periodStats(habits, fromKey, toKey);
+  let curStreak = 0, best = 0;
+  for (const h of habits) {
+    curStreak = Math.max(curStreak, currentStreak(h.id));
+    best = Math.max(best, bestStreak(h.id));
+  }
+
+  const countTiles = statPairHtml(
+    { icon: ICON.hash, value: st.done, label: 'Réalisations' },
+    { icon: ICON.percent, value: Math.round(st.rate * 100), label: 'Taux de réussite' }
+  );
+  const streakTiles = statPairHtml(
+    { icon: ICON.drop, value: curStreak, label: 'Série en cours' },
+    { icon: ICON.drop, value: best, label: 'Meilleure série' }
+  );
 
   els.stats.innerHTML =
-    '<div class="fade-in">' +
+    chipsHtml({ home: false }) +
     '<div class="segmented">' +
       '<button data-mode="month" class="' + (isMonth ? 'active' : '') + '">Mois</button>' +
       '<button data-mode="year" class="' + (!isMonth ? 'active' : '') + '">Année</button>' +
@@ -453,52 +649,146 @@ function renderStats() {
       '<span class="period-label">' + label + '</span>' +
       '<button class="icon-btn" data-period="1" aria-label="Période suivante"' + (canNext ? '' : ' disabled') + '>' + ICON.right + '</button>' +
     '</div>' +
-    '<div class="tiles">' +
-      '<div class="tile"><b>' + rate + '%</b><span>Taux de réussite</span></div>' +
-      '<div class="tile"><b>' + st.done + '</b><span>Coches au total</span></div>' +
-      '<div class="tile"><b>' + perfect + '</b><span>Jours parfaits</span></div>' +
-      '<div class="tile"><b>' + record + (record > 1 ? ' jours' : ' jour') + '</b><span>Record d\'affilée</span></div>' +
-    '</div>' +
-    '<div class="stats-card">' +
-      '<p class="section-title">' + (isMonth ? 'Calendrier du mois' : 'Réussite par mois') + '</p>' +
-      (isMonth ? monthHeatHtml(ui.statsMonth.getFullYear(), ui.statsMonth.getMonth()) : yearBarsHtml(ui.statsYear)) +
-    '</div>' +
-    '<div class="stats-card">' +
-      '<p class="section-title">Par habitude</p>' +
-      habitRowsHtml(fromKey, toKey) +
-    '</div>' +
-    '</div>';
+    (isMonth
+      ? countTiles +
+        monthHeatHtml(habits, ui.statsMonth.getFullYear(), ui.statsMonth.getMonth()) +
+        streakTiles
+      : yearHeatHtml(habits, ui.statsYear) +
+        countTiles +
+        '<div class="stats-card">' +
+          '<div class="stats-card-title"><h3>Réalisations / Mois</h3><div class="badge">' + ICON.trend + '</div></div>' +
+          '<div class="chart-wrap" id="area-chart"></div>' +
+          '<div class="chart-labels">' + MONTH_LETTERS.map((l, m) =>
+            '<em class="' + (ui.statsYear === t.getFullYear() && m === t.getMonth() ? 'now' : '') + '">' + l + '</em>'
+          ).join('') + '</div>' +
+        '</div>' +
+        streakTiles) +
+    habitRowsHtml(habits, fromKey, toKey);
+
+  if (!isMonth) {
+    buildAreaChart(habits, ui.statsYear);
+    const scroller = $('#ygrid-scroll');
+    if (scroller && ui.statsYear === t.getFullYear()) {
+      const start = mondayOf(new Date(ui.statsYear, 0, 1));
+      const col = Math.floor(daysBetween(start, mondayOf(t)) / 7);
+      scroller.scrollLeft = Math.max(0, (col + 1) * 14 - scroller.clientWidth + 4);
+    }
+  }
+}
+
+function buildAreaChart(habits, y) {
+  const wrap = $('#area-chart');
+  if (!wrap) return;
+  const W = wrap.clientWidth;
+  if (!W) return;
+  const H = 150, padY = 14;
+
+  const counts = [];
+  for (let m = 0; m < 12; m++) {
+    const from = keyOf(new Date(y, m, 1));
+    const to = keyOf(new Date(y, m, daysInMonth(y, m)));
+    let n = 0;
+    for (const h of habits) n += countRange(h.id, from, to);
+    counts.push(n);
+  }
+  const max = Math.max(1, ...counts);
+  const pts = counts.map((n, m) => [
+    (W * (m + 0.5)) / 12,
+    H - padY - ((H - 2 * padY) * n) / max,
+  ]);
+
+  let line = 'M' + pts[0][0].toFixed(1) + ' ' + pts[0][1].toFixed(1);
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [x1, y1] = pts[i], [x2, y2] = pts[i + 1];
+    const dx = (x2 - x1) * 0.45;
+    line += 'C' + (x1 + dx).toFixed(1) + ' ' + y1.toFixed(1) + ',' + (x2 - dx).toFixed(1) + ' ' + y2.toFixed(1) + ',' + x2.toFixed(1) + ' ' + y2.toFixed(1);
+  }
+  const area = line + 'L' + pts[11][0].toFixed(1) + ' ' + H + 'L' + pts[0][0].toFixed(1) + ' ' + H + 'Z';
+
+  wrap.innerHTML =
+    '<svg viewBox="0 0 ' + W + ' ' + H + '" aria-hidden="true">' +
+      '<defs><linearGradient id="ag" x1="0" y1="0" x2="0" y2="1">' +
+        '<stop offset="0" stop-color="rgba(139,92,246,0.4)"/>' +
+        '<stop offset="1" stop-color="rgba(139,92,246,0)"/>' +
+      '</linearGradient></defs>' +
+      '<path d="' + area + '" fill="url(#ag)"/>' +
+      '<path d="' + line + '" fill="none" stroke="#A78BFA" stroke-width="2.5" stroke-linecap="round"/>' +
+      pts.map(p => '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="3" fill="#C4B5FD"/>').join('') +
+    '</svg>';
 }
 
 /* ---------- Rendu : feuille détail ---------- */
 
-function yearGridHtml(h, y) {
+function detailGridHtml(h) {
   const t = todayDate();
   const tKey = keyOf(t);
-  const start = mondayOf(new Date(y, 0, 1));
-  const end = new Date(y, 11, 31);
-  const weeks = Math.ceil((daysBetween(start, end) + 1) / 7);
+  const start = addDays(mondayOf(t), -(WEEKS_WIDE - 1) * 7);
   let labels = '';
-  for (let m = 0; m < 12; m++) {
-    const col = Math.floor(daysBetween(start, new Date(y, m, 1)) / 7);
-    labels += '<span style="left:' + (col * 13) + 'px">' + MONTH_SHORT[m] + '</span>';
+  for (let i = 0; i < WEEKS_WIDE * 7; i += 1) {
+    const d = addDays(start, i);
+    if (d.getDate() === 1) {
+      const col = Math.floor(i / 7);
+      labels += '<span style="left:' + (col * 15) + 'px">' + MONTH_CAP[d.getMonth()] + '</span>';
+    }
   }
   let cells = '';
-  for (let w = 0; w < weeks; w++) {
+  for (let w = 0; w < WEEKS_WIDE; w++) {
     for (let r = 0; r < 7; r++) {
-      const d = addDays(start, w * 7 + r);
-      const k = keyOf(d);
-      if (d.getFullYear() !== y || k > tKey) { cells += '<i class="c off"></i>'; continue; }
-      const cls = ['c'];
-      if (isChecked(h.id, k)) cls.push('on');
-      if (k === tKey) cls.push('today');
-      cells += '<i class="' + cls.join(' ') + '"></i>';
+      cells += cellHtml(h, keyOf(addDays(start, w * 7 + r)), tKey, 'c');
     }
   }
   return (
-    '<div class="ygrid-wrap" id="ygrid-scroll">' +
-      '<div class="ylabels" style="width:' + (weeks * 13) + 'px">' + labels + '</div>' +
-      '<div class="ygrid" style="--c:' + h.color + '">' + cells + '</div>' +
+    '<div class="dgrid-row">' +
+      '<div class="dow-col" style="padding-top:18px">' + DOW_SIDE.map(l => '<span>' + l + '</span>').join('') + '</div>' +
+      '<div class="dgrid-wrap" id="dgrid-scroll">' +
+        '<div class="dlabels" style="width:' + (WEEKS_WIDE * 15) + 'px">' + labels + '</div>' +
+        '<div class="dgrid">' + cells + '</div>' +
+      '</div>' +
+    '</div>'
+  );
+}
+
+function calendarHtml(h) {
+  const t = todayDate();
+  const tKey = keyOf(t);
+  const y = ui.detailMonth.getFullYear();
+  const m = ui.detailMonth.getMonth();
+  const nDays = daysInMonth(y, m);
+  const first = new Date(y, m, 1);
+  const lead = (first.getDay() + 6) % 7;
+  const cellsTotal = Math.ceil((lead + nDays) / 7) * 7;
+
+  let cells = '';
+  for (let i = 0; i < cellsTotal; i++) {
+    const d = addDays(first, i - lead);
+    const k = keyOf(d);
+    const inMonth = d.getMonth() === m;
+    const done = inMonth && isChecked(h.id, k);
+    const cls = ['day'];
+    let style = '';
+    if (!inMonth) cls.push('out');
+    else if (k > tKey) cls.push('future');
+    else {
+      if (done) style = ' style="background:' + hexAlpha(h.color, 0.16) + '"';
+      if (k === tKey) cls.push('now');
+    }
+    const tappable = inMonth && k <= tKey;
+    cells +=
+      '<div class="' + cls.join(' ') + '"' + style + (tappable ? ' data-day="' + k + '"' : '') + '>' +
+        d.getDate() +
+        '<span class="dot"' + (done ? ' style="background:' + h.color + '"' : '') + '></span>' +
+      '</div>';
+  }
+
+  const canNext = y < t.getFullYear() || (y === t.getFullYear() && m < t.getMonth());
+  return (
+    '<div class="cal-head">' + DAY_LETTERS.map(l => '<span>' + l + '</span>').join('') + '</div>' +
+    '<div class="cal">' + cells + '</div>' +
+    '<div class="cal-nav">' +
+      '<div class="dchip">' + ICON.calendar + fmtMonthYear(ui.detailMonth) + '</div>' +
+      '<div class="spacer"></div>' +
+      '<button class="icon-btn" data-cal-nav="-1" aria-label="Mois précédent">' + ICON.left + '</button>' +
+      '<button class="icon-btn" data-cal-nav="1" aria-label="Mois suivant"' + (canNext ? '' : ' disabled') + '>' + ICON.right + '</button>' +
     '</div>'
   );
 }
@@ -506,73 +796,62 @@ function yearGridHtml(h, y) {
 function renderDetail() {
   const h = state.habits.find(x => x.id === ui.detailId);
   if (!h) return;
-  const t = todayDate();
-  const tKey = keyOf(t);
-  const done = isChecked(h.id, tKey);
-  const monthFrom = keyOf(new Date(t.getFullYear(), t.getMonth(), 1));
-  const monthTo = keyOf(new Date(t.getFullYear(), t.getMonth(), daysInMonth(t.getFullYear(), t.getMonth())));
-  const mDone = countRange(h.id, monthFrom, monthTo);
-  const mElig = eligibleDays(h, monthFrom, monthTo);
   const s = currentStreak(h.id);
-  const b = bestStreak(h.id);
 
   els.detailBody.innerHTML =
     '<div class="detail-head">' +
       '<div class="chip lg" style="background:' + hexAlpha(h.color, 0.16) + '">' + h.emoji + '</div>' +
       '<div class="card-info">' +
         '<h3>' + escapeHtml(h.name) + '</h3>' +
-        '<p>Depuis le ' + parseKey(h.createdAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }) + '</p>' +
+        '<p>' + (h.description ? escapeHtml(h.description) : 'Pas de description') + '</p>' +
       '</div>' +
-      '<div class="detail-actions">' +
-        '<button class="icon-btn" data-edit aria-label="Modifier">' + ICON.pencil + '</button>' +
-        '<button class="icon-btn" data-delete aria-label="Supprimer">' + ICON.trash + '</button>' +
-        '<button class="icon-btn" data-close aria-label="Fermer">' + ICON.close + '</button>' +
-      '</div>' +
+      '<button class="icon-btn" data-close aria-label="Fermer">' + ICON.close + '</button>' +
     '</div>' +
-    '<div class="tiles">' +
-      '<div class="tile"><b>🔥 ' + s + '</b><span>Série actuelle</span></div>' +
-      '<div class="tile"><b>' + b + (b > 1 ? ' jours' : ' jour') + '</b><span>Meilleure série</span></div>' +
-      '<div class="tile"><b>' + totalChecks(h.id) + '</b><span>Total coché</span></div>' +
-      '<div class="tile"><b>' + (mElig ? Math.round((mDone / mElig) * 100) : 0) + '%</b><span>Ce mois-ci</span></div>' +
+    detailGridHtml(h) +
+    '<div class="detail-chips">' +
+      '<div class="dchip">🔥 ' + s + '</div>' +
+      '<div class="dchip">🏆 ' + bestStreak(h.id) + '</div>' +
+      '<div class="dchip">Σ ' + totalChecks(h.id) + '</div>' +
+      '<div class="spacer"></div>' +
+      '<button class="icon-btn" data-edit aria-label="Modifier">' + ICON.pencil + '</button>' +
+      '<button class="icon-btn" data-delete aria-label="Supprimer">' + ICON.trash + '</button>' +
     '</div>' +
-    '<div class="period-nav">' +
-      '<button class="icon-btn" data-year="-1" aria-label="Année précédente">' + ICON.left + '</button>' +
-      '<span class="period-label">' + ui.detailYear + '</span>' +
-      '<button class="icon-btn" data-year="1" aria-label="Année suivante"' + (ui.detailYear < t.getFullYear() ? '' : ' disabled') + '>' + ICON.right + '</button>' +
-    '</div>' +
-    yearGridHtml(h, ui.detailYear) +
-    '<button class="btn-toggle-today' + (done ? ' done' : '') + '" data-toggle-today style="--c:' + h.color + '">' +
-      (done ? ICON.check + ' Fait aujourd\'hui' : ICON.plus + ' Cocher aujourd\'hui') +
-    '</button>';
+    '<div class="divider"></div>' +
+    calendarHtml(h);
 
-  const scroller = $('#ygrid-scroll');
-  if (scroller && ui.detailYear === t.getFullYear()) {
-    /* caler la semaine courante au bord droit de la zone visible */
-    const start = mondayOf(new Date(ui.detailYear, 0, 1));
-    const col = Math.floor(daysBetween(start, mondayOf(t)) / 7);
-    scroller.scrollLeft = Math.max(0, (col + 1) * 13 - scroller.clientWidth + 4);
-  }
+  const scroller = $('#dgrid-scroll');
+  if (scroller) scroller.scrollLeft = scroller.scrollWidth;
 }
 
 /* ---------- Feuilles (ouverture / fermeture) ---------- */
 
 function openSheet(which) {
-  ui.openSheet = which;
+  if (!ui.sheetStack.includes(which)) ui.sheetStack.push(which);
   els.backdrop.classList.add('show');
-  (which === 'edit' ? els.sheetEdit : els.sheetDetail).classList.add('show');
-  (which === 'edit' ? els.sheetEdit : els.sheetDetail).setAttribute('aria-hidden', 'false');
+  const el = els[SHEETS[which]];
+  el.classList.add('show');
+  el.setAttribute('aria-hidden', 'false');
   document.body.classList.add('locked');
 }
 
-function closeSheet() {
-  ui.openSheet = null;
-  els.backdrop.classList.remove('show');
-  for (const sh of [els.sheetEdit, els.sheetDetail]) {
-    sh.classList.remove('show');
-    sh.setAttribute('aria-hidden', 'true');
+function closeTopSheet() {
+  const which = ui.sheetStack.pop();
+  if (which) {
+    const el = els[SHEETS[which]];
+    el.classList.remove('show');
+    el.setAttribute('aria-hidden', 'true');
   }
-  document.body.classList.remove('locked');
+  if (!ui.sheetStack.length) {
+    els.backdrop.classList.remove('show');
+    document.body.classList.remove('locked');
+  }
 }
+
+function closeAllSheets() {
+  while (ui.sheetStack.length) closeTopSheet();
+}
+
+/* ---------- Édition d'habitude ---------- */
 
 function openEdit(id) {
   ui.editId = id;
@@ -581,13 +860,17 @@ function openEdit(id) {
     if (!h) return;
     ui.editEmoji = h.emoji;
     ui.editColor = h.color;
+    ui.editCat = h.categoryId;
     els.editName.value = h.name;
+    els.editDesc.value = h.description || '';
     els.editTitle.textContent = 'Modifier l\'habitude';
     els.editSave.textContent = 'Enregistrer';
   } else {
     ui.editEmoji = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
     ui.editColor = PALETTE[state.habits.length % PALETTE.length];
+    ui.editCat = ui.catFilter;
     els.editName.value = '';
+    els.editDesc.value = '';
     els.editTitle.textContent = 'Nouvelle habitude';
     els.editSave.textContent = 'Créer l\'habitude';
   }
@@ -601,6 +884,14 @@ function syncEditControls() {
   els.editChip.style.background = hexAlpha(ui.editColor, 0.2);
   els.editSave.disabled = els.editName.value.trim() === '';
   els.editSave.style.background = ui.editColor;
+  els.editCatRow.innerHTML =
+    '<button type="button" class="fchip' + (ui.editCat === null ? ' active' : '') + '" data-cat-select="">Aucune</button>' +
+    state.categories.map(c =>
+      '<button type="button" class="fchip' + (ui.editCat === c.id ? ' active' : '') + '" data-cat-select="' + c.id + '">' +
+        '<span class="e">' + c.emoji + '</span>' + escapeHtml(c.name) +
+      '</button>'
+    ).join('') +
+    '<button type="button" class="fchip" data-new-cat>' + ICON.plus.replace('viewBox', 'style="width:15px;height:15px" viewBox') + ' Nouvelle</button>';
   for (const b of els.emojiGrid.children) b.classList.toggle('sel', b.dataset.emoji === ui.editEmoji);
   for (const b of els.colorGrid.children) b.classList.toggle('sel', b.dataset.color === ui.editColor);
 }
@@ -608,12 +899,15 @@ function syncEditControls() {
 function saveEdit() {
   const name = els.editName.value.trim();
   if (!name) return;
+  const desc = els.editDesc.value.trim();
   if (ui.editId) {
     const h = state.habits.find(x => x.id === ui.editId);
     if (h) {
       h.name = name;
       h.emoji = ui.editEmoji;
       h.color = ui.editColor;
+      h.categoryId = ui.editCat;
+      h.description = desc;
     }
   } else {
     state.habits.push({
@@ -622,18 +916,96 @@ function saveEdit() {
       emoji: ui.editEmoji,
       color: ui.editColor,
       createdAt: keyOf(todayDate()),
+      categoryId: ui.editCat,
+      description: desc,
     });
   }
   save();
-  closeSheet();
-  renderHeader();
+  closeAllSheets();
+  renderAll();
+}
+
+/* ---------- Catégories ---------- */
+
+function openCatSheet(catId, fromEdit) {
+  ui.catFromEdit = !!fromEdit;
+  loadCatForm(catId);
+  openSheet('cat');
+  if (!catId) setTimeout(() => els.catName.focus(), 350);
+}
+
+function loadCatForm(catId) {
+  ui.catEditId = catId;
+  if (catId) {
+    const c = state.categories.find(x => x.id === catId);
+    if (!c) return;
+    ui.catEmoji = c.emoji;
+    els.catName.value = c.name;
+    els.catTitle.textContent = 'Modifier la catégorie';
+    els.catSave.textContent = 'Enregistrer';
+  } else {
+    ui.catEmoji = '🏷️';
+    els.catName.value = '';
+    els.catTitle.textContent = 'Nouvelle catégorie';
+    els.catSave.textContent = 'Créer la catégorie';
+  }
+  syncCatControls();
+}
+
+function syncCatControls() {
+  els.catChip.textContent = ui.catEmoji;
+  els.catChip.style.background = 'rgba(139,92,246,0.18)';
+  els.catSave.disabled = els.catName.value.trim() === '';
+  for (const b of els.catEmojiGrid.children) b.classList.toggle('sel', b.dataset.catEmoji === ui.catEmoji);
+  els.catList.innerHTML = state.categories.length
+    ? '<p class="label">Catégories existantes</p>' +
+      state.categories.map(c =>
+        '<div class="cat-item">' +
+          '<span class="e">' + c.emoji + '</span>' +
+          '<span class="n">' + escapeHtml(c.name) + '</span>' +
+          '<button class="icon-btn" data-cat-load="' + c.id + '" aria-label="Modifier">' + ICON.pencil + '</button>' +
+          '<button class="icon-btn" data-cat-del="' + c.id + '" aria-label="Supprimer">' + ICON.trash + '</button>' +
+        '</div>'
+      ).join('')
+    : '';
+}
+
+function saveCat() {
+  const name = els.catName.value.trim();
+  if (!name) return;
+  if (ui.catEditId) {
+    const c = state.categories.find(x => x.id === ui.catEditId);
+    if (c) { c.name = name; c.emoji = ui.catEmoji; }
+  } else {
+    const c = { id: uid(), name, emoji: ui.catEmoji };
+    state.categories.push(c);
+    if (ui.catFromEdit) ui.editCat = c.id;
+  }
+  save();
+  closeTopSheet();
+  if (ui.catFromEdit) syncEditControls();
   renderHome();
   renderStats();
 }
 
+function deleteCat(id) {
+  state.categories = state.categories.filter(c => c.id !== id);
+  for (const h of state.habits) if (h.categoryId === id) h.categoryId = null;
+  if (ui.catFilter === id) ui.catFilter = null;
+  if (ui.editCat === id) ui.editCat = null;
+  if (ui.catEditId === id) loadCatForm(null);
+  save();
+  syncCatControls();
+  renderHome();
+  renderStats();
+}
+
+/* ---------- Détail / suppression ---------- */
+
 function openDetail(id) {
   ui.detailId = id;
-  ui.detailYear = todayDate().getFullYear();
+  const t = todayDate();
+  ui.detailMonth = new Date(t.getFullYear(), t.getMonth(), 1);
   renderDetail();
   openSheet('detail');
 }
@@ -644,23 +1016,26 @@ function deleteHabit(id) {
   state.habits = state.habits.filter(h => h.id !== id);
   delete state.checks[id];
   save();
-  closeSheet();
-  renderHeader();
-  renderHome();
-  renderStats();
+  closeAllSheets();
+  renderAll();
 }
 
 /* ---------- Coches ---------- */
 
-function toggleToday(id, opts) {
-  const k = keyOf(todayDate());
-  const next = !isChecked(id, k);
-  setChecked(id, k, next);
+function toggleCheck(id, key, opts) {
+  const h = state.habits.find(x => x.id === id);
+  if (!h) return;
+  const next = !isChecked(id, key);
+  setChecked(id, key, next);
+  if (next && key < h.createdAt) {
+    h.createdAt = key; /* coche antérieure à la création : on recule la date de début */
+    save();
+  }
   if (next && navigator.vibrate) navigator.vibrate(15);
   renderHeader();
   renderHome(opts && opts.fromHome && next ? id : null);
   renderStats();
-  if (ui.openSheet === 'detail' && ui.detailId === id) renderDetail();
+  if (ui.sheetStack.includes('detail') && ui.detailId === id) renderDetail();
 }
 
 /* ---------- Grilles émoji / couleur (une seule fois) ---------- */
@@ -668,6 +1043,9 @@ function toggleToday(id, opts) {
 function buildPickers() {
   els.emojiGrid.innerHTML = EMOJIS.map(e =>
     '<button type="button" data-emoji="' + e + '" aria-label="' + e + '">' + e + '</button>'
+  ).join('');
+  els.catEmojiGrid.innerHTML = EMOJIS.map(e =>
+    '<button type="button" data-cat-emoji="' + e + '" aria-label="' + e + '">' + e + '</button>'
   ).join('');
   els.colorGrid.innerHTML = PALETTE.map(c =>
     '<button type="button" data-color="' + c + '" style="--c:' + c + ';background:' + c + '" aria-label="' + c + '"></button>'
@@ -683,6 +1061,7 @@ function setTab(tab) {
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   renderHeader();
   if (tab === 'stats') renderStats();
+  syncPill();
   window.scrollTo(0, 0);
 }
 
@@ -700,20 +1079,46 @@ document.addEventListener('click', e => {
   const checkBtn = target.closest('[data-check]');
   if (checkBtn) {
     e.stopPropagation();
-    toggleToday(checkBtn.dataset.check, { fromHome: true });
+    toggleCheck(checkBtn.dataset.check, keyOf(todayDate()), { fromHome: true });
     return;
   }
 
   const tab = target.closest('.tab');
   if (tab) { setTab(tab.dataset.tab); return; }
 
-  if (target.closest('#fab')) { openEdit(null); return; }
+  if (target.closest('#add-btn')) { openEdit(null); return; }
+
+  const view = target.closest('[data-view]');
+  if (view) {
+    state.settings.viewMode = view.dataset.view;
+    save();
+    renderHome();
+    return;
+  }
+
+  const chip = target.closest('[data-chip]');
+  if (chip) {
+    ui.catFilter = chip.dataset.chip === '' ? null : chip.dataset.chip;
+    renderHome();
+    renderStats();
+    return;
+  }
+
+  if (target.closest('[data-done-toggle]')) {
+    state.settings.showDone = !state.settings.showDone;
+    save();
+    renderHome();
+    return;
+  }
+
+  if (target.closest('[data-add-cat]')) { openCatSheet(null, false); return; }
 
   const card = target.closest('[data-card]');
   if (card) { openDetail(card.dataset.card); return; }
 
-  if (target.closest('[data-close]')) { closeSheet(); return; }
-  if (target === els.backdrop) { closeSheet(); return; }
+  if (target.closest('[data-close]')) { closeTopSheet(); return; }
+  if (target.closest('[data-close-cat]')) { closeTopSheet(); if (ui.catFromEdit) syncEditControls(); return; }
+  if (target === els.backdrop) { closeTopSheet(); return; }
 
   const mode = target.closest('[data-mode]');
   if (mode) {
@@ -734,26 +1139,48 @@ document.addEventListener('click', e => {
     return;
   }
 
+  /* Sélections dans les feuilles d'édition */
+
   const emoji = target.closest('[data-emoji]');
-  if (emoji) {
-    ui.editEmoji = emoji.dataset.emoji;
-    syncEditControls();
-    return;
-  }
+  if (emoji) { ui.editEmoji = emoji.dataset.emoji; syncEditControls(); return; }
+
+  const catEmoji = target.closest('[data-cat-emoji]');
+  if (catEmoji) { ui.catEmoji = catEmoji.dataset.catEmoji; syncCatControls(); return; }
 
   const color = target.closest('[data-color]');
-  if (color) {
-    ui.editColor = color.dataset.color;
+  if (color) { ui.editColor = color.dataset.color; syncEditControls(); return; }
+
+  const catSel = target.closest('[data-cat-select]');
+  if (catSel) {
+    ui.editCat = catSel.dataset.catSelect === '' ? null : catSel.dataset.catSelect;
     syncEditControls();
     return;
   }
 
-  if (target.closest('#edit-save')) { saveEdit(); return; }
+  if (target.closest('[data-new-cat]')) { openCatSheet(null, true); return; }
 
-  /* Actions de la feuille détail */
+  if (target.closest('#edit-save')) { saveEdit(); return; }
+  if (target.closest('#cat-save')) { saveCat(); return; }
+
+  const catLoad = target.closest('[data-cat-load]');
+  if (catLoad) { loadCatForm(catLoad.dataset.catLoad); return; }
+
+  const catDel = target.closest('[data-cat-del]');
+  if (catDel) {
+    if (catDel.classList.contains('danger-armed')) {
+      deleteCat(catDel.dataset.catDel);
+    } else {
+      catDel.classList.add('danger-armed');
+      setTimeout(() => catDel.classList.remove('danger-armed'), 2500);
+    }
+    return;
+  }
+
+  /* Feuille détail */
+
   if (target.closest('[data-edit]')) {
     const id = ui.detailId;
-    closeSheet();
+    closeAllSheets();
     setTimeout(() => openEdit(id), 200);
     return;
   }
@@ -770,30 +1197,29 @@ document.addEventListener('click', e => {
     return;
   }
 
-  const yearNav = target.closest('[data-year]');
-  if (yearNav && !yearNav.disabled) {
-    ui.detailYear += +yearNav.dataset.year;
-    renderDetail();
-    return;
-  }
+  const day = target.closest('[data-day]');
+  if (day) { toggleCheck(ui.detailId, day.dataset.day); return; }
 
-  if (target.closest('[data-toggle-today]')) {
-    toggleToday(ui.detailId);
+  const calNav = target.closest('[data-cal-nav]');
+  if (calNav && !calNav.disabled) {
+    ui.detailMonth = new Date(ui.detailMonth.getFullYear(), ui.detailMonth.getMonth() + +calNav.dataset.calNav, 1);
+    renderDetail();
     return;
   }
 });
 
 els.editName.addEventListener('input', syncEditControls);
+els.catName.addEventListener('input', syncCatControls);
+
 els.editName.addEventListener('keydown', e => {
-  if (e.key === 'Enter') {
-    e.preventDefault();
-    els.editName.blur();
-    saveEdit();
-  }
+  if (e.key === 'Enter') { e.preventDefault(); els.editName.blur(); }
+});
+els.catName.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); els.catName.blur(); saveCat(); }
 });
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && ui.openSheet) closeSheet();
+  if (e.key === 'Escape' && ui.sheetStack.length) closeTopSheet();
 });
 
 /* Changement de jour (l'app reste ouverte pendant la nuit, retour au premier plan…) */
